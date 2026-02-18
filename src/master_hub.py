@@ -12,8 +12,7 @@ from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
 
 # ----------------- Configuration -----------------
-# Load from Environment Variables for Security
-VOLC_API_KEY = os.environ.get("VOLC_API_KEY", "bada174e-cad9-4a2e-9e0c-ab3b57cec669") # Kept default for Brain runtime
+VOLC_API_KEY = os.environ.get("VOLC_API_KEY", "bada174e-cad9-4a2e-9e0c-ab3b57cec669")
 VOLC_BASE_URL = os.environ.get("VOLC_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
 MODEL_NAME = os.environ.get("MODEL_NAME", "doubao-seed-code")
 
@@ -22,9 +21,9 @@ WORKER_USER = os.environ.get("WORKER_USER", "justone")
 INBOX_REMOTE = "~/inbox"
 OUTBOX_REMOTE = "~/outbox"
 
-# ----------------- Memory -----------------
 TAPE_FILE = Path("memory.jsonl")
 
+# ----------------- Core Logic -----------------
 def append_to_tape(role, content, meta=None):
     entry = {
         "id": int(time.time() * 1000),
@@ -50,7 +49,6 @@ def read_tape(limit=20):
             pass
     return entries
 
-# ----------------- Helpers -----------------
 def get_local_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -61,366 +59,170 @@ def get_local_ip():
     except:
         return "127.0.0.1"
 
-def get_weather():
-    try:
-        res = requests.get("https://wttr.in/Shanghai?format=%c+%t", timeout=2)
-        if res.status_code == 200:
-            return res.text.strip()
-    except:
-        pass
-    return "⛅️ 25°C"
+# ----------------- LLM & Skills -----------------
+client = OpenAI(api_key=VOLC_API_KEY, base_url=VOLC_BASE_URL)
 
-# ----------------- Worker -----------------
 def dispatch_task(cmd):
     task_id = f"task-{int(time.time())}"
-    task_payload = {
-        "id": task_id,
-        "cmd": cmd,
-        "ts": time.time()
-    }
+    task_payload = {"id": task_id, "cmd": cmd, "ts": time.time()}
     local_file = f"/tmp/{task_id}.json"
     with open(local_file, "w") as f:
         json.dump(task_payload, f)
-    
-    logging.info(f"Dispatching task {task_id} to Worker...")
     scp_cmd = f"scp -o StrictHostKeyChecking=no {local_file} {WORKER_USER}@{WORKER_IP}:{INBOX_REMOTE}/{task_id}.json"
     subprocess.run(scp_cmd, shell=True)
     return {"status": "dispatched", "id": task_id}
 
-def check_task_result(task_id):
-    remote_file = f"{OUTBOX_REMOTE}/{task_id}.json.result"
-    local_res = f"/tmp/{task_id}.result"
-    scp_cmd = f"scp -o StrictHostKeyChecking=no {WORKER_USER}@{WORKER_IP}:{remote_file} {local_res}"
-    res = subprocess.run(scp_cmd, shell=True, capture_output=True)
-    if res.returncode == 0 and os.path.exists(local_res):
-        with open(local_res, "r") as f:
-            return json.load(f)
-    return None
-
-# ----------------- LLM -----------------
-client = OpenAI(api_key=VOLC_API_KEY, base_url=VOLC_BASE_URL)
-
-def ask_llm(user_input):
-    history = read_tape(10)
-    messages = [{"role": "system", "content": "你是 Master Agent。你的职责是理解用户意图。\n能够闲聊，也能指挥 Worker。\n如果用户要求执行 Shell 命令、下载、系统操作，请输出特殊标记：\n<call_worker>COMMAND</call_worker>\n例如：<call_worker>ping baidu.com</call_worker>"}]
-    for h in history:
-        messages.append({"role": h["role"], "content": h["content"]})
-    messages.append({"role": "user", "content": user_input})
-    try:
-        completion = client.chat.completions.create(model=MODEL_NAME, messages=messages)
-        return completion.choices[0].message.content
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-# ----------------- Flask -----------------
+# ----------------- Flask Web UI -----------------
 app = Flask(__name__)
 
-# --- Shared JS ---
-COMMON_SCRIPT = """
-    <script>
-        window.onerror = function(msg, source, lineno) { console.error("JS Error: " + msg + " line " + lineno); }
-        document.addEventListener("DOMContentLoaded", function() {
-            const input = document.getElementById('msg-input');
-            const btn = document.getElementById('send-btn');
-            const chat = document.getElementById('chat-container');
-
-            async function sendMsg() {
-                const txt = input.value.trim();
-                if(!txt) return;
-                input.value = '';
-                try {
-                    await fetch('/api/chat', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({msg: txt})
-                    });
-                } catch(e) { alert('Send failed: ' + e); }
-            }
-            if(btn && input) {
-                btn.onclick = sendMsg;
-                input.onkeypress = (e) => { if(e.key === 'Enter') sendMsg(); };
-            }
-
-            let lastId = 0;
-            async function syncChat() {
-                try {
-                    const res = await fetch('/api/history?since=' + lastId);
-                    if(!res.ok) return;
-                    const entries = await res.json();
-                    let scrolled = false;
-                    entries.forEach(entry => {
-                        if(entry.id <= lastId) return;
-                        lastId = entry.id;
-                        let cls = 'sys';
-                        if(entry.role === 'user') cls = 'user';
-                        if(entry.role === 'assistant') cls = 'ai';
-                        chat.innerHTML += `<div class="msg ${cls}">${entry.content}</div>`;
-                        scrolled = true;
-                    });
-                    if(scrolled) chat.scrollTop = chat.scrollHeight;
-                } catch(e) {}
-            }
-            setInterval(syncChat, 2000);
-            syncChat();
-        });
-    </script>
-"""
-
-# --- Desktop Template ---
-DESKTOP_TEMPLATE = """
+# Template context shared by both Desktop and Mobile
+HTML_BASE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>PiBot Master</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <style>
-        :root { --bg-color: #f2f2f7; --card-bg: #ffffff; --accent: #007aff; --text-main: #1c1c1e; --text-dim: #8e8e93; --shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; background: var(--bg-color); color: var(--text-main); margin: 0; padding: 24px; height: 100vh; display: grid; grid-template-columns: 280px 1fr; gap: 24px; box-sizing: border-box; overflow: hidden; }
-        aside { display: flex; flex-direction: column; gap: 20px; height: 100%; }
-        .widget { background: var(--card-bg); padding: 20px; border-radius: 18px; box-shadow: var(--shadow); }
-        #clock-card { text-align: center; padding: 30px 20px; }
-        #clock-card h1 { font-size: 3.5em; margin: 0; font-weight: 600; line-height: 1; }
-        #clock-card p { font-size: 1em; color: var(--text-dim); margin: 8px 0 0 0; text-transform: uppercase; }
-        #weather-card { text-align: center; font-size: 1.3em; font-weight: 500; }
-        #todo-card { flex: 1; overflow-y: auto; }
-        #todo-card h3 { margin: 0 0 15px 0; color: var(--text-dim); font-size: 0.8em; text-transform: uppercase; }
-        #todo-list { list-style: none; padding: 0; margin: 0; }
-        #todo-list li { padding: 10px 0; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px; font-size: 0.95em; }
-        #todo-list li::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--accent); }
-        #qr-card { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
-        #net-info { font-size: 0.85em; color: var(--text-dim); font-family: monospace; }
-        
-        main { background: var(--card-bg); border-radius: 24px; padding: 24px; box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
-        #chat-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-bottom: 20px; }
-        #input-area { display: flex; gap: 12px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
-        #msg-input { flex: 1; padding: 14px; border-radius: 12px; border: 1px solid #e5e5ea; background: #f9f9f9; font-size: 1em; outline: none; }
-        #msg-input:focus { border-color: var(--accent); background: #fff; }
-        #send-btn { background: var(--accent); color: #fff; border: none; padding: 0 24px; border-radius: 12px; font-weight: 600; cursor: pointer; }
-        
-        .msg { padding: 12px 18px; border-radius: 16px; max-width: 75%; line-height: 1.5; position: relative; }
-        .user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
-        .ai { align-self: flex-start; background: #f2f2f7; color: var(--text-main); border-bottom-left-radius: 4px; }
-        .sys { align-self: center; color: var(--text-dim); font-size: 0.85em; background: rgba(0,0,0,0.03); padding: 4px 12px; border-radius: 100px; }
-    </style>
-</head>
-<body>
-    <aside>
-        <div id="clock-card" class="widget">
-            <h1 id="time">00:00</h1>
-            <p id="date">JAN 1</p>
-        </div>
-        <div id="weather-card" class="widget">
-            <span id="weather-icon">Loading...</span>
-        </div>
-        <div id="todo-card" class="widget">
-            <h3>Tasks</h3>
-            <ul id="todo-list">
-                <li>System Monitor</li>
-                <li>Worker Node Status</li>
-            </ul>
-        </div>
-        <div id="qr-card" class="widget">
-            <div id="qrcode"></div>
-            <div id="net-info">Scanning this Code<br>Opens Mobile Control</div>
-        </div>
-    </aside>
-    <main>
-        <div id="chat-container"><div class="msg sys">System Online</div></div>
-        <div id="input-area">
-            <input type="text" id="msg-input" placeholder="Desktop Control..." autocomplete="off">
-            <button id="send-btn">Send</button>
-        </div>
-    </main>
-    <script>
-        function updateTime() {
-            const now = new Date();
-            document.getElementById('time').innerText = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-            document.getElementById('date').innerText = now.toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'});
-        }
-        setInterval(updateTime, 1000); updateTime();
-        
-        async function updateWeather() {
-            try { const r = await fetch('/api/weather'); if(r.ok) document.getElementById('weather-icon').innerText = await r.text(); } catch(e){}
-        }
-        updateWeather(); setInterval(updateWeather, 600000);
-
-        new QRCode(document.getElementById("qrcode"), { text: "http://{{ host_ip }}:5000/mobile", width: 100, height: 100 });
-        
-        document.addEventListener('keydown', async (e) => {
-            if (e.key === 'Escape') {
-                if(confirm('Shutdown Dashboard?')) await fetch('/api/kill');
-            }
-        });
-    </script>
-    """ + COMMON_SCRIPT + """
-</body>
-</html>
-"""
-
-# --- Mobile Template ---
-MOBILE_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Master Mobile</title>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>{{ title }}</title>
     <style>
-        :root { --bg-color: #f2f2f7; --card-bg: #ffffff; --accent: #007aff; --text-main: #1c1c1e; }
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg-color); margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        
-        header { background: var(--card-bg); padding: 15px; text-align: center; border-bottom: 1px solid #e5e5ea; display: flex; justify-content: space-between; align-items: center; }
-        header h1 { margin: 0; font-size: 1.1em; font-weight: 600; }
-        #weather-icon { font-size: 0.9em; color: #8e8e93; }
-
-        #chat-container { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; background: #fff; }
-        #input-area { background: #f9f9f9; padding: 10px; border-top: 1px solid #e5e5ea; display: flex; gap: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
-        
-        #msg-input { flex: 1; padding: 10px; border-radius: 20px; border: 1px solid #d1d1d6; font-size: 1em; outline: none; }
-        #send-btn { background: var(--accent); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-        
-        .msg { padding: 10px 14px; border-radius: 18px; max-width: 80%; line-height: 1.4; word-wrap: break-word; }
-        .user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
-        .ai { align-self: flex-start; background: #e9e9eb; color: #000; border-bottom-left-radius: 4px; }
-        .sys { align-self: center; font-size: 0.8em; color: #8e8e93; margin: 5px 0; }
+        :root { --primary: #007aff; --bg: #f2f2f7; --card: #ffffff; --text: #1c1c1e; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); margin: 0; display: flex; flex-direction: column; height: 100vh; color: var(--text); }
+        .header { background: var(--card); padding: 15px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; }
+        #chat-container { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; background: #fff; }
+        .message { padding: 10px 14px; white-space: pre-wrap; border-radius: 18px; max-width: 80%; line-height: 1.4; word-wrap: break-word; font-size: 15px; }
+        .user { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+        .assistant { align-self: flex-start; background: #e9e9eb; color: #000; border-bottom-left-radius: 4px; }
+        .sys { align-self: center; font-size: 0.8em; color: #8e8e93; background: #f0f0f0; padding: 2px 10px; border-radius: 10px; }
+        .input-area { padding: 10px; background: var(--card); border-top: 1px solid #ddd; display: flex; gap: 10px; }
+        #user-input { flex: 1; padding: 12px; border-radius: 20px; border: 1px solid #ddd; font-size: 16px; outline: none; }
+        #send-btn { background: var(--primary); color: white; border: none; padding: 0 15px; border-radius: 20px; font-weight: bold; }
     </style>
 </head>
 <body>
-    <header>
-        <h1>Master Control</h1>
-        <span id="weather-icon">Waiting...</span>
-    </header>
-    <div id="chat-container"><div class="msg sys">Connected to Master</div></div>
-    <div id="input-area">
-        <input type="text" id="msg-input" placeholder="Message..." autocomplete="off">
-        <button id="send-btn">↑</button>
+    <div class="header">
+        <span style="font-weight:bold;">🤖 {{ title }}</span>
+        <span style="font-size:0.8em; color:gray;">{{ ip }}</span>
+    </div>
+    <div id="chat-container"></div>
+    <div class="input-area">
+        <input type="text" id="user-input" placeholder="输入指令..." autocomplete="off">
+        <button id="send-btn">发送</button>
     </div>
     <script>
-        async function updateWeather() {
-            try { const r = await fetch('/api/weather'); if(r.ok) document.getElementById('weather-icon').innerText = await r.text(); } catch(e){}
+        const chat = document.getElementById('chat-container');
+        const input = document.getElementById('user-input');
+        const btn = document.getElementById('send-btn');
+        let lastUpdate = 0;
+
+        function appendMsg(role, text) {
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            
+            // Parse Markdown: images, links, bold, code
+            let html = text
+                .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, src) => `<img src="${src}" alt="${alt}" style="max-width:100%; border-radius:8px; margin:4px 0;">`)
+                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, url) => `<a href="${url}" target="_blank">${text}</a>`)
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                .replace(/`([^`]+)`/g, '<code style="background:#f0f0f0; padding:2px 6px; border-radius:4px;">$1</code>')
+
+            div.innerHTML = html;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
         }
-        updateWeather();
+
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/history?t=' + Date.now());
+                const data = await res.json();
+                if (data.timestamp > lastUpdate) {
+                    chat.innerHTML = '';
+                    data.history.forEach(m => appendMsg(m.role, m.content));
+                    lastUpdate = data.timestamp;
+                }
+            } catch(e) {}
+        }
+
+        async function send() {
+            const val = input.value.trim();
+            if(!val) return;
+            input.value = '';
+            appendMsg('user', val);
+            try {
+                await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({msg: val})
+                });
+                setTimeout(loadHistory, 800);
+            } catch(e) { alert('Failed'); }
+        }
+
+        btn.onclick = send;
+        input.onkeypress = (e) => { if(e.key === 'Enter') send(); };
+        setInterval(loadHistory, 3000);
+        loadHistory();
     </script>
-    """ + COMMON_SCRIPT + """
 </body>
 </html>
 """
 
 @app.route('/')
 def index():
-    return render_template_string(DESKTOP_TEMPLATE, host_ip=get_local_ip())
+    return render_template_string(HTML_BASE, title="PiBot Desktop", ip=get_local_ip())
 
 @app.route('/mobile')
 def mobile():
-    return render_template_string(MOBILE_TEMPLATE)
-
-@app.route('/api/weather')
-def api_weather():
-    return get_weather()
+    return render_template_string(HTML_BASE, title="PiBot Mobile", ip=get_local_ip())
 
 @app.route('/api/history')
 def api_history():
-    since = int(request.args.get('since', 0))
-    all_history = read_tape(20)
-    new_entries = [h for h in all_history if h['id'] > since]
-    return jsonify(new_entries)
-
-@app.route('/api/kill')
-def api_kill():
-    subprocess.Popen("pkill -f chromium", shell=True)
-    return "Killed"
+    history = read_tape(20)
+    ts = os.path.getmtime(TAPE_FILE) if TAPE_FILE.exists() else 0
+    return jsonify({"history": history, "timestamp": ts})
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
     data = request.json
     user_msg = data.get("msg")
     append_to_tape("user", user_msg)
-    ai_reply = ask_llm(user_msg)
     
-    action_cmd = None
-    task_id = None
-    if "<call_worker>" in ai_reply:
-        start = ai_reply.find("<call_worker>") + 13
-        end = ai_reply.find("</call_worker>")
-        action_cmd = ai_reply[start:end].strip()
-        res = dispatch_task(action_cmd)
-        task_id = res.get("id")
-        ai_reply = ai_reply.replace(f"<call_worker>{action_cmd}</call_worker>", "")
-        ai_reply += f"\n[Task dispatched to Worker: {action_cmd}]"
+    try:
+        from skill_manager import SkillManager
+        skill_mgr = SkillManager()
+        skill_mgr.load_skills()
+        skill_prompt = skill_mgr.get_prompt()
+    except Exception as e:
+        logging.error(f"Skill error: {e}")
+        skill_mgr, skill_prompt = None, ""
+
+    messages = [
+        {"role": "system", "content": f"你是 Master Agent。当前技能：\n{skill_prompt}"},
+        {"role": "user", "content": user_msg}
+    ]
     
-    append_to_tape("assistant", ai_reply)
-    return jsonify({"reply": ai_reply, "action": action_cmd, "task_id": task_id})
-
-@app.route('/api/result/<task_id>')
-def get_result(task_id):
-    res = check_task_result(task_id)
-    if res: return jsonify(res)
-    return jsonify({"status": "pending"})
-
-def result_poller():
-    """Background thread to fetch results from Worker"""
-    while True:
-        try:
-            # Check if results exist
-            os.makedirs("results", exist_ok=True)
-            scp_cmd = f"scp -o StrictHostKeyChecking=no {WORKER_USER}@{WORKER_IP}:{OUTBOX_REMOTE}/*.result results/ 2>/dev/null"
-            res = subprocess.run(scp_cmd, shell=True, capture_output=True)
-            
-            if res.returncode == 0:
-                for f in os.listdir("results"):
-                    if not f.endswith(".result"): continue
-                    
-                    local_f = os.path.join("results", f)
-                    try:
-                        with open(local_f, 'r') as fp:
-                            data = json.load(fp)
-                        
-                        # Construct Raw Content
-                        raw_content = ""
-                        if data.get('stdout'): raw_content += f"Output:\n{data['stdout']}"
-                        if data.get('stderr'): raw_content += f"\nError:\n{data['stderr']}"
-                        if data.get('status') == 'exception': raw_content += f"\nException: {data.get('error')}"
-                        
-                        # AI Interpretation (The Magic Touch)
-                        try:
-                            system_prompt = "你是 PiBot 智能管家。请根据 Worker 的执行指令和结果，生成简短、幽默、人类友好的中文汇报。如果指令是查询温度，请自动将千分位数值转换为摄氏度（除以1000）。"
-                            user_content = f"Worker ({data.get('worker')}) 执行指令: '{data.get('cmd', 'Unknown')}'\n任务ID: {data.get('id')}\n执行结果:\n{raw_content}"
-                            
-                            response = client.chat.completions.create(
-                                model=MODEL_NAME,
-                                messages=[
-                                    {"role": "system", "content": system_prompt},
-                                    {"role": "user", "content": user_content}
-                                ]
-                            )
-                            final_msg = response.choices[0].message.content
-                        except Exception as llm_err:
-                            logging.error(f"LLM interpretation failed: {llm_err}")
-                            final_msg = f"✅ Worker Report:\n{raw_content}" # Fallback
-                        
-                        # Append to Tape
-                        append_to_tape("assistant", final_msg.strip())
-                        logging.info(f"Processed result for {data.get('id')}")
-                        
-                        # Delete Remote File (Important!)
-                        remote_f = f"{OUTBOX_REMOTE}/{f}"
-                        subprocess.run(f"ssh -o StrictHostKeyChecking=no {WORKER_USER}@{WORKER_IP} 'rm {remote_f}'", shell=True)
-                        
-                    except Exception as e:
-                        logging.error(f"Error processing {f}: {e}")
-                    finally:
-                        if os.path.exists(local_f): os.remove(local_f)
-                        
-        except Exception as e:
-            logging.error(f"Poller Loop Error: {e}")
+    try:
+        response = client.chat.completions.create(model=MODEL_NAME, messages=messages)
+        ai_reply = response.choices[0].message.content
         
-        time.sleep(3)
+        # Handle Skill Execution
+        if "<call_skill>" in ai_reply and skill_mgr:
+            start = ai_reply.find("<call_skill>") + 12
+            end = ai_reply.find("</call_skill>")
+            content = ai_reply[start:end].strip()
+            
+            if ":" in content:
+                skill_name, args = content.split(":", 1)
+                result = skill_mgr.execute(skill_name, args)
+            else:
+                result = skill_mgr.execute(content)
+                
+            append_to_tape("assistant", f"{ai_reply}\n[Result]: {result}")
+            return jsonify({"reply": "executed"})
+            
+        append_to_tape("assistant", ai_reply)
+        return jsonify({"reply": ai_reply})
+    except Exception as e:
+        return jsonify({"reply": f"Error: {e}"})
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    
-    # Start Poller
-    threading.Thread(target=result_poller, daemon=True).start()
-    
-    # Enable threading to handle multiple clients (Kiosk + Phone) without blocking
     app.run(host='0.0.0.0', port=5000, threaded=True)
