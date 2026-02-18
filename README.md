@@ -1,7 +1,8 @@
-# PiBot V3: Distributed Python Agent System 🤖
+# PiBot V3: Distributed Python Agent System 🤖 (Beta)
 
 A lightweight, robust distributed agent system running on Raspberry Pi, designed for stability and modern interactions.
 
+![Status](https://img.shields.io/badge/status-beta-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.9+-yellow.svg)
 ![Platform](https://img.shields.io/badge/platform-RabbitMQ%20%7C%20Flask-green.svg)
