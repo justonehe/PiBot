@@ -1,0 +1,15 @@
+[Unit]
+Description=PiBot Kiosk Display Service
+After=graphical.target pibot-hub.service
+
+[Service]
+User=justone
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/justone/.Xauthority
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/bin/chromium --kiosk --noerrdialogs --disable-infobars http://localhost:5000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

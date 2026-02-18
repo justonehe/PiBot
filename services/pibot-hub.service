@@ -1,0 +1,16 @@
+[Unit]
+Description=PiBot Master Hub Service
+After=network.target
+
+[Service]
+User=justone
+WorkingDirectory=/home/justone
+EnvironmentFile=/home/justone/pibot.env
+ExecStart=/usr/bin/python3 /home/justone/master_hub.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/justone/master.log
+StandardError=append:/home/justone/master.log
+
+[Install]
+WantedBy=multi-user.target

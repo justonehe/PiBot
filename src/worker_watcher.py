@@ -39,6 +39,7 @@ def execute_task(task_file):
         
         output = {
             "id": task_id,
+            "cmd": cmd,
             "status": "success" if result.returncode == 0 else "error",
             "stdout": result.stdout,
             "stderr": result.stderr,

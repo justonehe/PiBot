@@ -12,12 +12,13 @@ from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
 
 # ----------------- Configuration -----------------
-VOLC_API_KEY = "bada174e-cad9-4a2e-9e0c-ab3b57cec669"
-VOLC_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3"
-MODEL_NAME = "doubao-seed-code"
+# Load from Environment Variables for Security
+VOLC_API_KEY = os.environ.get("VOLC_API_KEY", "bada174e-cad9-4a2e-9e0c-ab3b57cec669") # Kept default for Brain runtime
+VOLC_BASE_URL = os.environ.get("VOLC_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
+MODEL_NAME = os.environ.get("MODEL_NAME", "doubao-seed-code")
 
-WORKER_IP = "192.168.10.66"
-WORKER_USER = "justone"
+WORKER_IP = os.environ.get("WORKER_IP", "192.168.10.66")
+WORKER_USER = os.environ.get("WORKER_USER", "justone")
 INBOX_REMOTE = "~/inbox"
 OUTBOX_REMOTE = "~/outbox"
 
@@ -356,7 +357,70 @@ def get_result(task_id):
     if res: return jsonify(res)
     return jsonify({"status": "pending"})
 
+def result_poller():
+    """Background thread to fetch results from Worker"""
+    while True:
+        try:
+            # Check if results exist
+            os.makedirs("results", exist_ok=True)
+            scp_cmd = f"scp -o StrictHostKeyChecking=no {WORKER_USER}@{WORKER_IP}:{OUTBOX_REMOTE}/*.result results/ 2>/dev/null"
+            res = subprocess.run(scp_cmd, shell=True, capture_output=True)
+            
+            if res.returncode == 0:
+                for f in os.listdir("results"):
+                    if not f.endswith(".result"): continue
+                    
+                    local_f = os.path.join("results", f)
+                    try:
+                        with open(local_f, 'r') as fp:
+                            data = json.load(fp)
+                        
+                        # Construct Raw Content
+                        raw_content = ""
+                        if data.get('stdout'): raw_content += f"Output:\n{data['stdout']}"
+                        if data.get('stderr'): raw_content += f"\nError:\n{data['stderr']}"
+                        if data.get('status') == 'exception': raw_content += f"\nException: {data.get('error')}"
+                        
+                        # AI Interpretation (The Magic Touch)
+                        try:
+                            system_prompt = "你是 PiBot 智能管家。请根据 Worker 的执行指令和结果，生成简短、幽默、人类友好的中文汇报。如果指令是查询温度，请自动将千分位数值转换为摄氏度（除以1000）。"
+                            user_content = f"Worker ({data.get('worker')}) 执行指令: '{data.get('cmd', 'Unknown')}'\n任务ID: {data.get('id')}\n执行结果:\n{raw_content}"
+                            
+                            response = client.chat.completions.create(
+                                model=MODEL_NAME,
+                                messages=[
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_content}
+                                ]
+                            )
+                            final_msg = response.choices[0].message.content
+                        except Exception as llm_err:
+                            logging.error(f"LLM interpretation failed: {llm_err}")
+                            final_msg = f"✅ Worker Report:\n{raw_content}" # Fallback
+                        
+                        # Append to Tape
+                        append_to_tape("assistant", final_msg.strip())
+                        logging.info(f"Processed result for {data.get('id')}")
+                        
+                        # Delete Remote File (Important!)
+                        remote_f = f"{OUTBOX_REMOTE}/{f}"
+                        subprocess.run(f"ssh -o StrictHostKeyChecking=no {WORKER_USER}@{WORKER_IP} 'rm {remote_f}'", shell=True)
+                        
+                    except Exception as e:
+                        logging.error(f"Error processing {f}: {e}")
+                    finally:
+                        if os.path.exists(local_f): os.remove(local_f)
+                        
+        except Exception as e:
+            logging.error(f"Poller Loop Error: {e}")
+        
+        time.sleep(3)
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    
+    # Start Poller
+    threading.Thread(target=result_poller, daemon=True).start()
+    
     # Enable threading to handle multiple clients (Kiosk + Phone) without blocking
     app.run(host='0.0.0.0', port=5000, threaded=True)
