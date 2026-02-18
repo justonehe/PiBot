@@ -1,3 +1,8 @@
+"""
+PiBot V3 - Master Hub (Robust Edition)
+增强健壮性版本，包含完善的错误处理和监控
+"""
+
 import os
 import json
 import time
@@ -5,81 +10,369 @@ import subprocess
 import threading
 import logging
 import socket
-import requests
+import sys
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, request, jsonify, render_template_string
-from openai import OpenAI
+from functools import wraps
 
-# ----------------- Configuration -----------------
-VOLC_API_KEY = os.environ.get("VOLC_API_KEY", "bada174e-cad9-4a2e-9e0c-ab3b57cec669")
-VOLC_BASE_URL = os.environ.get("VOLC_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
-MODEL_NAME = os.environ.get("MODEL_NAME", "doubao-seed-code")
+# ============================================================================
+# 1. 日志配置（最先初始化）
+# ============================================================================
 
-WORKER_IP = os.environ.get("WORKER_IP", "192.168.10.66")
-WORKER_USER = os.environ.get("WORKER_USER", "justone")
-INBOX_REMOTE = "~/inbox"
-OUTBOX_REMOTE = "~/outbox"
-
-TAPE_FILE = Path("memory.jsonl")
-
-# ----------------- Core Logic -----------------
-def append_to_tape(role, content, meta=None):
-    """Append a message to the memory tape."""
-    entry = {
-        "id": int(time.time() * 1000),
-        "ts": datetime.now().isoformat(),
-        "role": role,
-        "content": content,
-        "meta": meta or {}
-    }
-    with open(TAPE_FILE, "a") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    return entry
-
-def read_tape(limit=20):
-    """Read recent messages from the memory tape."""
-    if not TAPE_FILE.exists():
-        return []
-    with open(TAPE_FILE, "r") as f:
-        lines = f.readlines()
-    entries = []
-    for line in lines[-limit:]:
-        try:
-            entry = json.loads(line)
-            if entry.get("content") is not None:
-                entries.append(entry)
-        except:
-            pass
-    return entries
-
-def get_local_ip():
+def setup_logging():
+    """Setup logging with rotation and proper formatting."""
+    log_format = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    
+    # 创建 handlers
+    handlers = [
+        logging.StreamHandler(sys.stdout),
+    ]
+    
+    # 如果日志目录可写，添加文件 handler
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        file_handler = logging.FileHandler(
+            log_dir / f"master_{datetime.now().strftime('%Y%m%d')}.log",
+            encoding='utf-8'
+        )
+        handlers.append(file_handler)
+    except Exception as e:
+        print(f"Warning: Could not setup file logging: {e}", file=sys.stderr)
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format=log_format,
+        handlers=handlers
+    )
+    
+    return logging.getLogger(__name__)
+
+logger = setup_logging()
+
+# ============================================================================
+# 2. 配置管理（带验证）
+# ============================================================================
+
+class Config:
+    """Configuration with validation and defaults."""
+    
+    # LLM Configuration
+    VOLC_API_KEY = os.environ.get("VOLC_API_KEY", "")
+    VOLC_BASE_URL = os.environ.get("VOLC_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
+    MODEL_NAME = os.environ.get("MODEL_NAME", "doubao-seed-code")
+    LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "30"))  # 秒
+    LLM_MAX_RETRIES = int(os.environ.get("LLM_MAX_RETRIES", "2"))
+    
+    # Worker Configuration
+    WORKER_IP = os.environ.get("WORKER_IP", "192.168.10.66")
+    WORKER_USER = os.environ.get("WORKER_USER", "justone")
+    INBOX_REMOTE = "~/inbox"
+    OUTBOX_REMOTE = "~/outbox"
+    
+    # Server Configuration
+    HOST = os.environ.get("HOST", "0.0.0.0")
+    PORT = int(os.environ.get("PORT", "5000"))
+    DEBUG = os.environ.get("DEBUG", "").lower() in ("true", "1", "yes")
+    
+    # Memory Configuration
+    TAPE_FILE = Path("memory.jsonl")
+    MAX_TAPE_SIZE_MB = int(os.environ.get("MAX_TAPE_SIZE_MB", "100"))
+    MAX_HISTORY_ENTRIES = int(os.environ.get("MAX_HISTORY_ENTRIES", "50"))
+    
+    @classmethod
+    def validate(cls):
+        """Validate configuration."""
+        errors = []
+        
+        if not cls.VOLC_API_KEY:
+            errors.append("VOLC_API_KEY not set")
+        
+        if cls.PORT < 1 or cls.PORT > 65535:
+            errors.append(f"Invalid PORT: {cls.PORT}")
+        
+        if errors:
+            for error in errors:
+                logger.error(f"Config error: {error}")
+            raise ValueError(f"Configuration errors: {', '.join(errors)}")
+        
+        logger.info("Configuration validated successfully")
+
+# ============================================================================
+# 3. 健康检查与监控
+# ============================================================================
+
+class HealthMonitor:
+    """Service health monitoring."""
+    
+    def __init__(self):
+        self.start_time = time.time()
+        self.request_count = 0
+        self.error_count = 0
+        self.last_error = None
+        self.status = "healthy"
+    
+    def record_request(self, success=True):
+        """Record a request."""
+        self.request_count += 1
+        if not success:
+            self.error_count += 1
+            if self.error_count > 10:  # 阈值
+                self.status = "degraded"
+    
+    def record_error(self, error):
+        """Record an error."""
+        self.last_error = {
+            "time": datetime.now().isoformat(),
+            "error": str(error)
+        }
+    
+    def get_status(self):
+        """Get current health status."""
+        uptime = time.time() - self.start_time
+        error_rate = self.error_count / max(self.request_count, 1)
+        
+        return {
+            "status": self.status,
+            "uptime_seconds": int(uptime),
+            "requests_total": self.request_count,
+            "errors_total": self.error_count,
+            "error_rate": round(error_rate, 4),
+            "last_error": self.last_error
+        }
+
+monitor = HealthMonitor()
+
+# ============================================================================
+# 4. 错误处理装饰器
+# ============================================================================
+
+def safe_operation(default_return=None, log_errors=True):
+    """Decorator for safe operation with error handling."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                if log_errors:
+                    logger.error(f"Error in {func.__name__}: {e}", exc_info=True)
+                monitor.record_error(e)
+                monitor.record_request(success=False)
+                return default_return
+        return wrapper
+    return decorator
+
+# ============================================================================
+# 5. 记忆管理（健壮版）
+# ============================================================================
+
+class MemoryManager:
+    """Robust memory/tape management."""
+    
+    def __init__(self, tape_file: Path, max_size_mb: int = 100):
+        self.tape_file = tape_file
+        self.max_size_mb = max_size_mb
+        self._lock = threading.Lock()
+    
+    @safe_operation(default_return=None)
+    def append(self, role: str, content, meta=None):
+        """Append entry to tape with error handling."""
+        if not content:
+            logger.warning(f"Skipping empty content for role: {role}")
+            return None
+        
+        entry = {
+            "id": int(time.time() * 1000),
+            "ts": datetime.now().isoformat(),
+            "role": role,
+            "content": content,
+            "meta": meta or {}
+        }
+        
+        with self._lock:
+            try:
+                # 检查文件大小，如果过大则轮转
+                self._rotate_if_needed()
+                
+                with open(self.tape_file, "a", encoding='utf-8') as f:
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                
+                logger.debug(f"Appended to tape: {role}")
+                return entry
+                
+            except Exception as e:
+                logger.error(f"Failed to write to tape: {e}")
+                raise
+    
+    @safe_operation(default_return=[])
+    def read(self, limit: int = 20):
+        """Read entries from tape with error handling."""
+        if not self.tape_file.exists():
+            return []
+        
+        try:
+            with self._lock:
+                with open(self.tape_file, "r", encoding='utf-8') as f:
+                    lines = f.readlines()
+            
+            entries = []
+            for line in lines[-limit:]:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("content") is not None:
+                        entries.append(entry)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Skipping corrupted tape entry: {e}")
+                    continue
+            
+            return entries
+            
+        except Exception as e:
+            logger.error(f"Failed to read tape: {e}")
+            return []
+    
+    def _rotate_if_needed(self):
+        """Rotate tape file if too large."""
+        if not self.tape_file.exists():
+            return
+        
+        size_mb = self.tape_file.stat().st_size / (1024 * 1024)
+        if size_mb > self.max_size_mb:
+            logger.info(f"Rotating tape file (size: {size_mb:.1f}MB)")
+            backup = self.tape_file.with_suffix('.jsonl.backup')
+            self.tape_file.rename(backup)
+            # 清空原文件
+            self.tape_file.write_text("")
+    
+    def get_stats(self):
+        """Get tape statistics."""
+        if not self.tape_file.exists():
+            return {"exists": False, "entries": 0, "size_mb": 0}
+        
+        try:
+            size_mb = self.tape_file.stat().st_size / (1024 * 1024)
+            with open(self.tape_file, 'r', encoding='utf-8') as f:
+                lines = sum(1 for _ in f)
+            return {"exists": True, "entries": lines, "size_mb": round(size_mb, 2)}
+        except Exception as e:
+            logger.error(f"Failed to get tape stats: {e}")
+            return {"exists": True, "error": str(e)}
+
+# Initialize memory manager
+memory = MemoryManager(Config.TAPE_FILE, Config.MAX_TAPE_SIZE_MB)
+
+# ============================================================================
+# 6. LLM 客户端（带重试和超时）
+# ============================================================================
+
+class LLMClient:
+    """Robust LLM client with retry logic."""
+    
+    def __init__(self):
+        self.client = None
+        self._init_client()
+    
+    def _init_client(self):
+        """Initialize OpenAI client."""
+        try:
+            from openai import OpenAI
+            self.client = OpenAI(
+                api_key=Config.VOLC_API_KEY,
+                base_url=Config.VOLC_BASE_URL,
+                timeout=Config.LLM_TIMEOUT
+            )
+            logger.info("LLM client initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM client: {e}")
+            self.client = None
+    
+    def is_available(self):
+        """Check if client is available."""
+        return self.client is not None
+    
+    @safe_operation(default_return=None)
+    def chat(self, messages, model=None, max_retries=None):
+        """Chat with retry logic."""
+        if not self.client:
+            return None
+        
+        model = model or Config.MODEL_NAME
+        max_retries = max_retries or Config.LLM_MAX_RETRIES
+        
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = self.client.chat.completions.create(
+                    model=model,
+                    messages=messages
+                )
+                return response
+                
+            except Exception as e:
+                last_error = e
+                logger.warning(f"LLM attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)  # 指数退避
+        
+        logger.error(f"LLM failed after {max_retries + 1} attempts: {last_error}")
+        return None
+
+llm = LLMClient()
+
+# ============================================================================
+# 7. 工具函数
+# ============================================================================
+
+@safe_operation(default_return="127.0.0.1")
+def get_local_ip():
+    """Get local IP address."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(2)
+    try:
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
+    finally:
         s.close()
-        return ip
-    except:
-        return "127.0.0.1"
+    return ip
 
-# ----------------- LLM & Skills -----------------
-client = OpenAI(api_key=VOLC_API_KEY, base_url=VOLC_BASE_URL)
-
+@safe_operation(default_return={"status": "error", "error": "dispatch failed"})
 def dispatch_task(cmd):
+    """Dispatch task to worker."""
     task_id = f"task-{int(time.time())}"
     task_payload = {"id": task_id, "cmd": cmd, "ts": time.time()}
     local_file = f"/tmp/{task_id}.json"
+    
     with open(local_file, "w") as f:
         json.dump(task_payload, f)
-    scp_cmd = f"scp -o StrictHostKeyChecking=no {local_file} {WORKER_USER}@{WORKER_IP}:{INBOX_REMOTE}/{task_id}.json"
-    subprocess.run(scp_cmd, shell=True)
-    return {"status": "dispatched", "id": task_id}
+    
+    scp_cmd = f"scp -o StrictHostKeyChecking=no -o ConnectTimeout=5 {local_file} {Config.WORKER_USER}@{Config.WORKER_IP}:{Config.INBOX_REMOTE}/{task_id}.json"
+    result = subprocess.run(scp_cmd, shell=True, capture_output=True, timeout=10)
+    
+    if result.returncode == 0:
+        return {"status": "dispatched", "id": task_id}
+    else:
+        return {"status": "error", "error": result.stderr.decode()}
 
-# ----------------- Flask Web UI -----------------
-app = Flask(__name__)
+# ============================================================================
+# 8. Flask 应用
+# ============================================================================
 
-HTML_BASE = """
+try:
+    from flask import Flask, request, jsonify, render_template_string
+    flask_available = True
+except ImportError:
+    logger.error("Flask not available")
+    flask_available = False
+    Flask = None
+
+if flask_available:
+    app = Flask(__name__)
+    
+    HTML_BASE = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -98,6 +391,7 @@ HTML_BASE = """
         .input-area { padding: 10px; background: var(--card); border-top: 1px solid #ddd; display: flex; gap: 10px; }
         #user-input { flex: 1; padding: 12px; border-radius: 20px; border: 1px solid #ddd; font-size: 16px; outline: none; }
         #send-btn { background: var(--primary); color: white; border: none; padding: 0 15px; border-radius: 20px; font-weight: bold; }
+        .error { background: #ffebee; color: #c62828; align-self: center; }
     </style>
 </head>
 <body>
@@ -138,7 +432,7 @@ HTML_BASE = """
                     data.history.forEach(m => appendMsg(m.role, m.content));
                     lastUpdate = data.timestamp;
                 }
-            } catch(e) {}
+            } catch(e) { console.error('History load failed:', e); }
         }
 
         async function send() {
@@ -147,13 +441,20 @@ HTML_BASE = """
             input.value = '';
             appendMsg('user', val);
             try {
-                await fetch('/api/chat', {
+                const res = await fetch('/api/chat', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({msg: val})
                 });
+                const data = await res.json();
+                if (data.error) {
+                    appendMsg('error', '⚠️ ' + data.error);
+                }
                 setTimeout(loadHistory, 800);
-            } catch(e) { alert('Failed'); }
+            } catch(e) { 
+                appendMsg('error', '⚠️ 发送失败，请检查网络'); 
+                console.error('Send failed:', e);
+            }
         }
 
         btn.onclick = send;
@@ -164,46 +465,72 @@ HTML_BASE = """
 </body>
 </html>
 """
-
-@app.route('/')
-def index():
-    return render_template_string(HTML_BASE, title="PiBot Desktop", ip=get_local_ip())
-
-@app.route('/mobile')
-def mobile():
-    return render_template_string(HTML_BASE, title="PiBot Mobile", ip=get_local_ip())
-
-@app.route('/api/history')
-def api_history():
-    history = read_tape(20)
-    ts = os.path.getmtime(TAPE_FILE) if TAPE_FILE.exists() else 0
-    return jsonify({"history": history, "timestamp": ts})
-
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    data = request.json
-    user_msg = data.get("msg", "").strip()
     
-    if not user_msg:
-        return jsonify({"reply": "Error: Empty message"})
+    @app.route('/')
+    def index():
+        return render_template_string(HTML_BASE, title="PiBot Desktop", ip=get_local_ip())
     
-    append_to_tape("user", user_msg)
+    @app.route('/mobile')
+    def mobile():
+        return render_template_string(HTML_BASE, title="PiBot Mobile", ip=get_local_ip())
     
-    # Load skills
-    try:
-        from skill_manager import SkillManager
-        skill_mgr = SkillManager()
-        skill_mgr.load_skills()
-        skill_prompt = skill_mgr.get_prompt()
-    except Exception as e:
-        logging.error(f"Skill error: {e}")
-        skill_mgr, skill_prompt = None, ""
-
-    # Build conversation history
-    history = read_tape(20)
+    @app.route('/api/health')
+    def health():
+        """Health check endpoint."""
+        return jsonify({
+            **monitor.get_status(),
+            "llm_available": llm.is_available(),
+            "tape_stats": memory.get_stats()
+        })
     
-    # System prompt with skill descriptions
-    system_prompt = f"""你是 Master Agent。你可以使用以下技能来完成任务：
+    @app.route('/api/history')
+    def api_history():
+        history = memory.read(20)
+        try:
+            ts = os.path.getmtime(Config.TAPE_FILE) if Config.TAPE_FILE.exists() else 0
+        except:
+            ts = 0
+        return jsonify({"history": history, "timestamp": ts})
+    
+    @app.route('/api/chat', methods=['POST'])
+    def chat():
+        monitor.record_request()
+        
+        # Parse request with error handling
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+        except Exception as e:
+            logger.error(f"Failed to parse request: {e}")
+            monitor.record_error(e)
+            return jsonify({"reply": "", "error": "Invalid request format"})
+        
+        user_msg = data.get("msg", "").strip()
+        if not user_msg:
+            return jsonify({"reply": "", "error": "Empty message"})
+        
+        # Save to memory
+        memory.append("user", user_msg)
+        
+        # Check LLM availability
+        if not llm.is_available():
+            error_msg = "LLM service not available"
+            logger.error(error_msg)
+            return jsonify({"reply": "", "error": error_msg})
+        
+        # Load skills
+        skill_mgr = None
+        skill_prompt = ""
+        try:
+            from skill_manager import SkillManager
+            skill_mgr = SkillManager()
+            skill_mgr.load_skills()
+            skill_prompt = skill_mgr.get_prompt()
+        except Exception as e:
+            logger.error(f"Skill error: {e}")
+        
+        # Build conversation
+        history = memory.read(Config.MAX_HISTORY_ENTRIES)
+        system_prompt = f"""你是 Master Agent。你可以使用以下技能来完成任务：
 
 {skill_prompt}
 
@@ -214,55 +541,79 @@ def chat():
 - 保持对话上下文，参考之前的对话内容
 
 请根据用户的问题和可用技能提供最佳回答。"""
-
-    messages = [{"role": "system", "content": system_prompt}]
-    
-    # Add conversation history
-    for entry in history:
-        role = entry.get("role")
-        content = entry.get("content")
-        if role in ["user", "assistant"] and content:
-            messages.append({"role": role, "content": content})
-    
-    # Add current message
-    messages.append({"role": "user", "content": user_msg})
-    
-    try:
-        response = client.chat.completions.create(model=MODEL_NAME, messages=messages)
+        
+        messages = [{"role": "system", "content": system_prompt}]
+        for entry in history:
+            role = entry.get("role")
+            content = entry.get("content")
+            if role in ["user", "assistant"] and content:
+                messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": user_msg})
+        
+        # Call LLM
+        response = llm.chat(messages)
+        if not response:
+            error_msg = "Failed to get response from LLM"
+            logger.error(error_msg)
+            return jsonify({"reply": "", "error": error_msg})
+        
         ai_reply = response.choices[0].message.content
         
         # Handle skill calls
         if "<call_skill>" in ai_reply and skill_mgr:
-            start = ai_reply.find("<call_skill>") + 12
-            end = ai_reply.find("</call_skill>")
-            content = ai_reply[start:end].strip()
-            
-            if ":" in content:
-                skill_name, args = content.split(":", 1)
-                skill_result = skill_mgr.execute(skill_name, args)
-            else:
-                skill_result = skill_mgr.execute(content)
-            
-            # Append skill result to conversation and let LLM handle it
-            # The LLM should provide a natural response based on the skill result
-            messages.append({"role": "assistant", "content": ai_reply})
-            messages.append({"role": "user", "content": f"技能执行结果：{json.dumps(skill_result, ensure_ascii=False)}\n\n请根据这个结果回答我的问题。"})
-            
-            # Get final response
-            final_response = client.chat.completions.create(model=MODEL_NAME, messages=messages)
-            final_reply = final_response.choices[0].message.content
-            
-            append_to_tape("assistant", final_reply)
-            return jsonify({"reply": final_reply})
+            try:
+                start = ai_reply.find("<call_skill>") + 12
+                end = ai_reply.find("</call_skill>")
+                content = ai_reply[start:end].strip()
+                
+                if ":" in content:
+                    skill_name, args = content.split(":", 1)
+                    skill_result = skill_mgr.execute(skill_name, args)
+                else:
+                    skill_result = skill_mgr.execute(content)
+                
+                # Follow-up with skill result
+                messages.append({"role": "assistant", "content": ai_reply})
+                messages.append({"role": "user", "content": f"技能执行结果：{json.dumps(skill_result, ensure_ascii=False)}\n\n请根据这个结果回答我的问题。"})
+                
+                final_response = llm.chat(messages)
+                if final_response:
+                    final_reply = final_response.choices[0].message.content
+                    memory.append("assistant", final_reply)
+                    return jsonify({"reply": final_reply})
+                else:
+                    return jsonify({"reply": ai_reply})  # Fallback
+                    
+            except Exception as e:
+                logger.error(f"Skill execution error: {e}")
+                memory.append("assistant", ai_reply)
+                return jsonify({"reply": ai_reply, "warning": "Skill execution failed"})
         
-        append_to_tape("assistant", ai_reply)
+        memory.append("assistant", ai_reply)
         return jsonify({"reply": ai_reply})
-        
-    except Exception as e:
-        error_msg = f"Error: {e}"
-        logging.error(error_msg)
-        return jsonify({"reply": error_msg})
+
+# ============================================================================
+# 9. 主入口
+# ============================================================================
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    app.run(host='0.0.0.0', port=5000, threaded=True)
+    try:
+        Config.validate()
+        
+        if not flask_available:
+            logger.error("Flask is required but not available")
+            sys.exit(1)
+        
+        logger.info(f"Starting Master Hub on {Config.HOST}:{Config.PORT}")
+        logger.info(f"Health check: http://{Config.HOST}:{Config.PORT}/api/health")
+        
+        app.run(
+            host=Config.HOST,
+            port=Config.PORT,
+            threaded=True,
+            debug=Config.DEBUG
+        )
+        
+    except Exception as e:
+        logger.critical(f"Failed to start: {e}", exc_info=True)
+        sys.exit(1)
