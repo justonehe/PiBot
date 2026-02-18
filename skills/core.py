@@ -168,51 +168,222 @@ def create_skill(args):
 {skill_name.capitalize()} Skill
 Created: {timestamp}
 Description: {description}
+
+SKILL CONTRACT:
+This skill follows the PiBot V3 Agent Skill Specification.
+- Returns structured data (dict) with standardized fields
+- Self-documenting: tells AI how to process results
+- Error handling via error field, not exceptions
 """
 
-import os
-import subprocess
-import logging
+# ============================================================================
+# METADATA (Frontmatter)
+# ============================================================================
+SKILL_META = {{
+    "name": "{skill_name}",
+    "description": "{description}",
+    "version": "1.0.0",
+    "tags": ["TODO: add relevant tags"],
+    "input_format": "TODO: describe input format",
+    "output_format": "structured_dict"
+}}
 
-def execute(args=None):
+# ============================================================================
+# IMPORTS
+# ============================================================================
+import logging
+from typing import Dict, Any, Optional
+
+# ============================================================================
+# CORE FUNCTION
+# ============================================================================
+
+def execute(args: Optional[str] = None) -> Dict[str, Any]:
     """
     Execute the {skill_name} skill.
 
     Args:
-        args: Command arguments (string or None)
+        args: Input arguments as string.
+              TODO: Document expected format
+              Examples:
+              - "single_argument"
+              - "arg1||arg2||arg3" (multiple args separated by ||)
 
     Returns:
-        str: Result message or output
+        Dict[str, Any]: Standardized result structure:
+        {{
+            "success": bool,          # True if operation succeeded
+            "data": Any,              # Main result data (None if failed)
+            "message": str,           # Human-readable summary
+            "error": str|None,        # Error details (None if success)
+            "meta": dict              # Optional metadata
+        }}
+
+    AI Processing Contract:
+    1. ALWAYS check result["success"] first
+    2. If success=True:
+       - Extract key information from result["data"]
+       - Provide a natural language summary to user
+       - Highlight important findings
+    3. If success=False:
+       - Explain result["message"] in user-friendly terms
+       - Suggest how to fix or retry
+    4. NEVER show raw JSON/dict to the user
+
+    Workflow:
+        User asks → AI calls skill → Skill returns dict → 
+        AI interprets → AI responds naturally
     """
     try:
+        # =====================================================================
+        # STEP 1: Parse and Validate Input
+        # =====================================================================
+        if not args:
+            # Handle no-argument case
+            parsed_args = {{}}
+        elif "||" in args:
+            # Multiple arguments
+            parts = [p.strip() for p in args.split("||")]
+            parsed_args = {{"values": parts}}
+        else:
+            # Single argument
+            parsed_args = {{"value": args.strip()}}
+
+        # TODO: Add your input validation here
+        # Example:
+        # if not validate_input(parsed_args):
+        #     return {{
+        #         "success": False,
+        #         "error": "Invalid input format",
+        #         "message": "Expected format: XXX||YYY",
+        #         "data": None
+        #     }}
+
+        # =====================================================================
+        # STEP 2: Execute Core Logic
+        # =====================================================================
         # TODO: Implement your skill logic here
         # Examples:
-        # - Process args
-        # - Run commands
-        # - Call APIs
-        # - Read/write files
+        # - Call external APIs
+        # - Query databases
+        # - Process files
+        # - Perform calculations
 
-        if args:
-            return f"Executed {skill_name} with args: {{args}}"
-        else:
-            return f"Executed {skill_name} (no args)"
+        result_data = {{
+            "example_field": "TODO: Replace with actual result data"
+        }}
+
+        # =====================================================================
+        # STEP 3: Return Structured Result
+        # =====================================================================
+        return {{
+            "success": True,
+            "data": result_data,
+            "message": "Operation completed successfully",
+            "error": None,
+            "meta": {{
+                "skill_name": "{skill_name}",
+                "args_received": args
+            }}
+        }}
+
+    except ValueError as ve:
+        # Input validation errors
+        logging.warning(f"[{skill_name}] Input validation error: {{ve}}")
+        return {{
+            "success": False,
+            "data": None,
+            "message": f"Invalid input: {{str(ve)}}. Please check the expected format.",
+            "error": str(ve),
+            "meta": {{"error_type": "validation"}}
+        }}
 
     except Exception as e:
-        logging.error(f"Error in {skill_name}: {{e}}")
-        return f"Error: {{e}}"
+        # Unexpected errors
+        logging.error(f"[{skill_name}] Unexpected error: {{e}}", exc_info=True)
+        return {{
+            "success": False,
+            "data": None,
+            "message": "An unexpected error occurred. Please try again or contact support.",
+            "error": str(e),
+            "meta": {{"error_type": "unexpected"}}
+        }}
 
 
-def register_skills(skill_manager):
+# ============================================================================
+# HELPER FUNCTIONS (Optional)
+# ============================================================================
+
+def _validate_input(args: Dict[str, Any]) -> bool:
+    """TODO: Implement input validation logic."""
+    return True
+
+
+def _process_data(data: Any) -> Any:
+    """TODO: Implement data processing logic."""
+    return data
+
+
+# ============================================================================
+# SKILL REGISTRATION
+# ============================================================================
+
+def register_skills(skill_manager) -> None:
     """
     Register this skill with the skill manager.
 
+    Registration Contract:
+    --------------------
+    This skill adheres to the PiBot V3 Agent Skill Specification:
+
+    1. Returns standardized dictionary with fields:
+       - success (bool): Operation status
+       - data (Any): Result payload
+       - message (str): Human-readable summary
+       - error (str|None): Error description
+       - meta (dict): Additional context
+
+    2. AI Assistant MUST process results:
+       ✓ Check result["success"] status
+       ✓ If True: Extract from result["data"], provide natural summary
+       ✓ If False: Explain result["message"] clearly
+       ✗ NEVER display raw dict/JSON to user
+
+    3. Error handling:
+       ✓ All exceptions caught internally
+       ✓ Returns error dict instead of raising
+       ✓ Provides actionable error messages
+
+    Example Usage:
+    -------------
+    User: "TODO: Example user request"
+    
+    AI: <call_skill>{skill_name}:example_input</call_skill>
+    
+    System: Returns
+    {{
+        "success": True,
+        "data": {{"result": "value"}},
+        "message": "Found 3 matching items",
+        "error": None,
+        "meta": {{"count": 3}}
+    }}
+    
+    AI: "I found 3 matching items for you. The results show... [natural summary]"
+
     Args:
-        skill_manager: SkillManager instance
+        skill_manager: SkillManager instance for registration
     """
     skill_manager.register(
-        "{skill_name}",
-        "{description}",
-        execute
+        name="{skill_name}",
+        description=(
+            "{description}. "
+            "Returns structured data (dict with success/data/message/error/meta). "
+            "YOU must check success status and provide natural language summary - "
+            "never show raw JSON/dict to user. "
+            "On failure, explain the error message helpfully."
+        ),
+        func=execute
     )
 '''
 
