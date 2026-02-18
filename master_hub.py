@@ -1140,6 +1140,32 @@ if flask_available:
     </div>
 
     <script>
+        // Prevent any redirects
+        window.onbeforeunload = function(e) {
+            e.preventDefault();
+            e.returnValue = '';
+            return '';
+        };
+        
+        // Override any existing location change attempts
+        Object.defineProperty(window, 'location', {
+            writable: false,
+            value: window.location
+        });
+        
+        // Block history manipulation
+        const originalPushState = history.pushState;
+        history.pushState = function() {
+            console.log('Blocked pushState redirect');
+            return null;
+        };
+        
+        const originalReplaceState = history.replaceState;
+        history.replaceState = function() {
+            console.log('Blocked replaceState redirect');
+            return null;
+        };
+        
         // Update datetime
         function updateDateTime() {
             const now = new Date();
@@ -1247,8 +1273,155 @@ if flask_available:
 
     @app.route("/dashboard")
     def dashboard():
-        """Dashboard display for kiosk screen."""
-        return render_template_string(DASHBOARD_HTML)
+        """Dashboard display - server-side rendered, no JavaScript."""
+        data = get_dashboard_data()
+        weather = data.get("weather", {})
+        current = weather.get("current", {})
+        forecast = weather.get("forecast", [])
+        todos = data.get("todos", [])
+        workers = data.get("workers", [])
+
+        from datetime import datetime
+
+        now = datetime.now()
+        # 简化日期显示适配7寸屏: 02-19 周三 14:30
+        datetime_str = now.strftime("%m-%d %a %H:%M")
+
+        weather_icons = {
+            "sunny": "☀️",
+            "cloudy": "☁️",
+            "rainy": "🌧️",
+            "snowy": "❄️",
+            "stormy": "⛈️",
+            "foggy": "🌫️",
+        }
+        w_icon = weather_icons.get(current.get("condition"), "🌤️")
+        w_temp = current.get("temp", "--")
+        w_humidity = current.get("humidity", "--")
+        w_location = weather.get("location", "Unknown")
+
+        # Build forecast HTML
+        forecast_html = ""
+        for day in forecast:
+            d_icon = weather_icons.get(day.get("condition"), "🌤️")
+            forecast_html += f"<div style='text-align:center;padding:15px;background:#f8f9fa;border-radius:12px;'><div style='font-weight:bold;color:#667eea;'>{day.get('day', '')}</div><div style='font-size:2em;margin:10px 0;'>{d_icon}</div><div>{day.get('high', '--')}° / {day.get('low', '--')}°</div></div>"
+
+        # Build todos HTML
+        todos_html = ""
+        if not todos:
+            todos_html = "<li style='padding:12px;background:#f8f9fa;border-radius:10px;margin-bottom:8px;'>暂无待办事项</li>"
+        else:
+            for todo in todos:
+                done_style = (
+                    "text-decoration:line-through;color:#999;"
+                    if todo.get("done")
+                    else ""
+                )
+                todos_html += f"<li style='padding:12px;background:#f8f9fa;border-radius:10px;margin-bottom:8px;{done_style}'>☐ {todo.get('text', '')}</li>"
+
+        # Build workers HTML
+        workers_html = ""
+        for worker in workers:
+            status = worker.get("status", "offline")
+            icon = "🔥" if status == "active" else ("💤" if status == "idle" else "❌")
+            bg = (
+                "linear-gradient(135deg,#11998e 0%,#38ef7d 100%);color:white;"
+                if status == "active"
+                else (
+                    "linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;"
+                    if status == "idle"
+                    else "#f8f9fa;"
+                )
+            )
+            workers_html += f"<div style='text-align:center;padding:20px;border-radius:12px;background:{bg}'><div style='font-size:2.5em;margin-bottom:10px;'>{icon}</div><div style='font-weight:bold;'>{worker.get('name', '')}</div><div>{worker.get('statusText', '')}</div></div>"
+
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="10">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PiBot Dashboard</title>
+    <style>
+        body {{ font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #333; min-height: 100vh; padding: 8px; margin: 0; font-size: 14px; overflow-x: hidden; }}
+        .dashboard {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-width: 800px; margin: 0 auto; }}
+        .card {{ background: rgba(255,255,255,0.95); border-radius: 8px; padding: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); overflow: hidden; }}
+        .header {{ grid-column: 1 / -1; text-align: center; color: white; padding: 8px 4px; }}
+        .header h1 {{ font-size: 1.6em; margin: 0 0 4px 0; }}
+        .datetime {{ font-size: 0.9em; opacity: 0.9; }}
+        .section-title {{ font-size: 1em; font-weight: bold; margin-bottom: 8px; color: #667eea; display: flex; align-items: center; gap: 4px; }}
+        .weather-current {{ display: flex; align-items: center; gap: 10px; }}
+        .weather-icon {{ font-size: 2.5em; line-height: 1; }}
+        .weather-info h2 {{ font-size: 2em; margin: 0; line-height: 1.2; }}
+        .weather-info p {{ font-size: 0.85em; margin: 2px 0; color: #666; }}
+        .forecast-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }}
+        .forecast-day {{ text-align: center; padding: 6px 4px; background: #f8f9fa; border-radius: 6px; font-size: 0.8em; }}
+        .forecast-day .day {{ font-weight: bold; color: #667eea; font-size: 0.9em; }}
+        .forecast-day .icon {{ font-size: 1.5em; margin: 4px 0; line-height: 1; display: block; }}
+        .forecast-day .temp {{ font-size: 0.85em; }}
+        .todo-list {{ list-style: none; padding: 0; margin: 0; max-height: 150px; overflow-y: auto; }}
+        .todo-item {{ display: flex; align-items: center; padding: 6px 8px; margin-bottom: 4px; background: #f8f9fa; border-radius: 6px; font-size: 0.9em; }}
+        .todo-checkbox {{ width: 14px; height: 14px; margin-right: 8px; flex-shrink: 0; }}
+        .todo-text {{ flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+        .todo-text.done {{ text-decoration: line-through; color: #999; }}
+        .workers-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }}
+        .worker-card {{ text-align: center; padding: 10px 6px; border-radius: 8px; font-size: 0.85em; }}
+        .worker-card.active {{ background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; }}
+        .worker-card.idle {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }}
+        .worker-card.offline {{ background: #e9ecef; color: #666; }}
+        .worker-icon {{ font-size: 1.8em; margin-bottom: 4px; line-height: 1; display: block; }}
+        .worker-name {{ font-weight: bold; margin-bottom: 2px; font-size: 0.9em; }}
+        .worker-status {{ font-size: 0.8em; opacity: 0.9; }}
+        .loading {{ text-align: center; color: #999; padding: 10px; font-size: 0.9em; }}
+        
+        /* 7寸屏幕优化 - 800x480 */
+        @media (max-width: 800px) {{
+            body {{ padding: 6px; font-size: 13px; }}
+            .dashboard {{ gap: 6px; }}
+            .card {{ padding: 10px; border-radius: 6px; }}
+            .header h1 {{ font-size: 1.4em; }}
+            .datetime {{ font-size: 0.8em; }}
+            .section-title {{ font-size: 0.95em; margin-bottom: 6px; }}
+            .weather-icon {{ font-size: 2em; }}
+            .weather-info h2 {{ font-size: 1.6em; }}
+            .forecast-grid {{ gap: 4px; }}
+            .forecast-day {{ padding: 4px 2px; font-size: 0.75em; }}
+            .forecast-day .icon {{ font-size: 1.3em; margin: 2px 0; }}
+            .workers-grid {{ gap: 6px; }}
+            .worker-card {{ padding: 8px 4px; }}
+            .worker-icon {{ font-size: 1.5em; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <h1>🤖 PiBot Dashboard</h1>
+            <div style="font-size: 1.2em; opacity: 0.9;">{datetime_str}</div>
+        </div>
+        <div class="card">
+            <div class="section-title">🌤️ 天气 - {w_location}</div>
+            <div class="weather-current">
+                <div class="weather-icon">{w_icon}</div>
+                <div class="weather-info">
+                    <h2>{w_temp}°C</h2>
+                    <p>湿度 {w_humidity}%</p>
+                </div>
+            </div>
+            <div class="forecast-grid">{forecast_html}</div>
+        </div>
+        <div class="card">
+            <div class="section-title">📝 待办事项 ({len(todos)})</div>
+            <ul class="todo-list">{todos_html}</ul>
+        </div>
+        <div class="card" style="grid-column: 1 / -1;">
+            <div class="section-title">👷 Worker 状态</div>
+            <div class="workers-grid">{workers_html}</div>
+        </div>
+    </div>
+</body>
+</html>"""
+        return html
 
     @app.route("/api/dashboard/data")
     def dashboard_data():
