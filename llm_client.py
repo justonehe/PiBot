@@ -77,6 +77,66 @@ class LLMClient:
                 messages, tools, temperature, max_tokens, stream
             )
 
+    def _convert_messages_for_volcengine(
+        self, messages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Convert messages to Volcengine-compatible format.
+
+        Volcengine API doesn't support 'tool_call' content type or 'tool' role.
+        """
+        converted = []
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+
+            # Handle 'tool' role - convert to 'user' with tool result info
+            if role == "tool":
+                tool_id = msg.get("tool_call_id", "unknown")
+                content_str = content if isinstance(content, str) else str(content)
+                converted.append(
+                    {
+                        "role": "user",
+                        "content": f"[Tool Result {tool_id}]: {content_str}",
+                    }
+                )
+                continue
+
+            # Handle assistant with list content (may contain tool_calls)
+            if role == "assistant" and isinstance(content, list):
+                text_parts = []
+                for item in content:
+                    if item.get("type") == "text" and item.get("text"):
+                        text_parts.append(item["text"])
+                    elif item.get("type") == "tool_call":
+                        tool_name = item.get("name", "unknown")
+                        tool_id = item.get("id", "unknown")
+                        tool_info = f"[Calling tool: {tool_name} (ID: {tool_id})]"
+                        text_parts.append(tool_info)
+                converted.append(
+                    {
+                        "role": "assistant",
+                        "content": "\n".join(text_parts) if text_parts else "",
+                    }
+                )
+                continue
+
+            # For other messages, ensure content is a string
+            if isinstance(content, list):
+                text_parts = []
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        text_parts.append(item.get("text", ""))
+                content = "\n".join(text_parts)
+
+            converted.append(
+                {
+                    "role": role,
+                    "content": content if isinstance(content, str) else str(content),
+                }
+            )
+
+        return converted
+
     async def _call_openai(
         self,
         messages: List[Dict[str, Any]],
@@ -86,9 +146,12 @@ class LLMClient:
         stream: bool,
     ) -> Dict[str, Any]:
         """Call OpenAI-compatible API."""
+        # Convert messages for Volcengine compatibility
+        converted_messages = self._convert_messages_for_volcengine(messages)
+
         params = {
             "model": self.model,
-            "messages": messages,
+            "messages": converted_messages,
             "temperature": temperature,
             "stream": stream,
         }

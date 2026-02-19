@@ -14,11 +14,18 @@ import os
 import json
 import asyncio
 import logging
+import time
+import threading
 from typing import Any, Dict, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from enum import Enum
+
+# Load .env file at startup
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Flask imports (wrapped in try/except for graceful degradation)
 try:
@@ -341,6 +348,61 @@ def create_app(executor: WorkerExecutor = None) -> Optional["Flask"]:
 
 
 # ============================================================================
+# Task Result Storage (optional - for HTTP-based result retrieval)
+# ============================================================================
+
+
+class TaskResultStore:
+    """Simple file-based task result storage."""
+
+    def __init__(self, storage_dir: Path = None):
+        self.storage_dir = storage_dir or Path.home() / "outbox"
+        self.storage_dir.mkdir(exist_ok=True)
+
+    def save_result(self, task: Task, result: Dict[str, Any]):
+        """Save task result to file."""
+        result_file = self.storage_dir / f"result_{task.task_id}.json"
+        with open(result_file, "w") as f:
+            json.dump(
+                {
+                    "task_id": task.task_id,
+                    "status": task.status.value,
+                    "result": result,
+                    "completed_at": datetime.now().isoformat(),
+                },
+                f,
+                indent=2,
+            )
+        logger.info(f"Task result saved: {result_file}")
+
+            except Exception as e:
+                logger.error(f"Failed to process inbox file {task_file}: {e}")
+                # Move to error
+                error_dir = self.inbox_dir / "error"
+                error_dir.mkdir(exist_ok=True)
+                try:
+                    task_file.rename(error_dir / task_file.name)
+                except:
+                    pass
+
+    def _save_result(self, task: Task, result: Dict[str, Any]):
+        """Save task result to outbox."""
+        result_file = self.outbox_dir / f"result_{task.task_id}.json"
+        with open(result_file, "w") as f:
+            json.dump(
+                {
+                    "task_id": task.task_id,
+                    "status": task.status.value,
+                    "result": result,
+                    "completed_at": datetime.now().isoformat(),
+                },
+                f,
+                indent=2,
+            )
+        logger.info(f"Task result saved to outbox: {result_file}")
+
+
+# ============================================================================
 # Main Entry Point
 # ============================================================================
 
@@ -354,6 +416,9 @@ def main():
     parser.add_argument("--port", type=int, default=5000, help="Port to bind")
     parser.add_argument("--skills-dir", default="skills", help="Skills directory")
     parser.add_argument("--worker-id", default=None, help="Worker ID")
+    parser.add_argument(
+        "--inbox-mode", action="store_true", help="Enable inbox file watcher"
+    )
 
     args = parser.parse_args()
 
@@ -367,14 +432,26 @@ def main():
         worker_id=args.worker_id, skills_dir=Path(args.skills_dir)
     )
 
+    # Start inbox watcher if enabled
+    watcher = None
+    if args.inbox_mode:
+        watcher = InboxWatcher(executor)
+        watcher.start()
+
     # Create and run Flask app
     app = create_app(executor)
 
     if app:
         logger.info(f"Starting Worker on {args.host}:{args.port}")
+        if watcher:
+            logger.info("Inbox file watcher enabled")
         app.run(host=args.host, port=args.port, threaded=True)
     else:
         logger.error("Failed to create Flask app")
+
+    # Cleanup
+    if watcher:
+        watcher.stop()
 
 
 if __name__ == "__main__":

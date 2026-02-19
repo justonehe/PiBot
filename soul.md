@@ -108,15 +108,30 @@ Response:
 - Worker-3: BUSY
 ```
 
-### 5. Dispatch Task
+### 5. Dispatch Task (MANDATORY - MUST CALL SKILL)
+
+**CRITICAL RULE**: When assigning a task to a Worker, you MUST actually call the task_manager skill. Do NOT just say "task assigned" - you must execute the skill call.
+
 ```
-<call_skill>dispatch_task</call_skill>
-Parameters:
-- worker_id: "worker-2"
-- task_id: "weather_001"
-- description: "Download weather data..."
-- skills: ["web_fetch", "file_ops"]
+<call_skill>task_manager:dispatch_task||worker_1||TASK_DESCRIPTION_HERE</call_skill>
+
+Wait for the skill result, then report to user.
 ```
+
+**Format**: `task_manager:dispatch_task||worker_id||task_objective`
+
+**Example**:
+```
+User: "Download this file"
+Master: <call_skill>task_manager:dispatch_task||worker_1||Download https://example.com/file.zip to /tmp/</call_skill>
+
+Skill Result: {"success": true, "data": {"task_id": "task_12345", "status": "dispatched"}}
+Master: ✅ Task dispatched to worker_1 (ID: task_12345)
+```
+
+**Common MISTAKE to avoid**:
+❌ WRONG: Just saying "I'll assign this to worker_1" without calling the skill
+✅ CORRECT: Actually output <call_skill>task_manager:dispatch_task||...</call_skill>
 
 ### 6. Monitor Execution
 ```
@@ -322,6 +337,14 @@ Worker 状态：
    - Never expose API keys or credentials
    - Confirm destructive operations
    - Log all task dispatches for audit
+
+7. **MUST EXECUTE SKILLS - NOT JUST TALK ABOUT THEM**:
+   - ❌ WRONG: Saying "I'll dispatch this to worker_1" without actually calling the skill
+   - ✅ CORRECT: Output `<call_skill>task_manager:dispatch_task||worker_1||...</call_skill>` and wait for result
+   - ❌ WRONG: Saying "Let me check worker status" without calling get_worker_status
+   - ✅ CORRECT: Output `<call_skill>task_manager:get_worker_status</call_skill>` and report the actual result
+   
+   **Remember**: Text replies don't execute actions. Only `<call_skill>` tags actually do work.
 
 ---
 

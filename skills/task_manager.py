@@ -223,91 +223,74 @@ def dispatch_task(worker_id: str, objective: str, context: str = "") -> Dict[str
     with open(task_file, "w", encoding="utf-8") as f:
         json.dump(task, f, ensure_ascii=False, indent=2)
 
-    # 尝试分发到 Worker
+    # 尝试分发到 Worker (使用 HTTP POST)
     try:
-        # 使用 SSH 启动 Worker 执行器
         worker_ip = config["ip"]
-        remote_task_path = f"/tmp/{task_id}.json"
+        worker_url = f"http://{worker_ip}:5000/task"
 
-        # 复制任务文件到 Worker
-        scp_result = subprocess.run(
-            [
-                "scp",
-                "-o",
-                "StrictHostKeyChecking=no",
-                str(task_file),
-                f"justone@{worker_ip}:{remote_task_path}",
-            ],
-            capture_output=True,
-            timeout=10,
-        )
-
-        if scp_result.returncode != 0:
-            # 复制失败，标记为本地执行
-            task["status"] = "local_pending"
-            task["error"] = f"Failed to copy to worker: {scp_result.stderr.decode()}"
-            with open(task_file, "w", encoding="utf-8") as f:
-                json.dump(task, f, ensure_ascii=False, indent=2)
-
-            return {
-                "success": True,  # 任务已创建，但本地执行
-                "message": f"任务 {task_id} 已创建，将在本地执行（Worker 传输失败）",
-                "data": {
-                    "task_id": task_id,
-                    "worker_id": worker_id,
-                    "status": "local_pending",
-                    "objective": objective,
-                },
-            }
-
-        # 远程执行 Worker
-        ssh_result = subprocess.run(
-            [
-                "ssh",
-                "-o",
-                "StrictHostKeyChecking=no",
-                f"justone@{worker_ip}",
-                f"cd ~ && python3 worker_executor.py {remote_task_path} &",
-            ],
-            capture_output=True,
-            timeout=10,
-        )
-
-        # 更新任务状态为运行中
-        task["status"] = "running"
-        task["started_at"] = datetime.now().isoformat()
-        with open(task_file, "w", encoding="utf-8") as f:
-            json.dump(task, f, ensure_ascii=False, indent=2)
-
-        return {
-            "success": True,
-            "message": f"任务已分派给 {config['name']}",
-            "data": {
-                "task_id": task_id,
-                "worker_id": worker_id,
-                "worker_name": config["name"],
-                "status": "running",
-                "objective": objective,
-                "estimated_duration": "1-5 分钟",
-            },
+        # 准备 HTTP POST 请求数据
+        payload = {
+            "task_id": task_id,
+            "description": objective + (f" | Context: {context}" if context else ""),
+            "skills": task["skills_required"],
         }
 
+        # 发送 HTTP POST 请求
+        import urllib.request
+        import urllib.error
+
+        req = urllib.request.Request(
+            worker_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                result = json.loads(response.read().decode("utf-8"))
+                if result.get("success"):
+                    task["status"] = "dispatched"
+                    task["dispatched_at"] = datetime.now().isoformat()
+                    with open(task_file, "w", encoding="utf-8") as f:
+                        json.dump(task, f, ensure_ascii=False, indent=2)
+                else:
+                    raise Exception(result.get("error", "Unknown error"))
+        except urllib.error.URLError as e:
+            raise Exception(f"HTTP error: {e}")
+
     except Exception as e:
-        # 执行失败，更新任务状态
         task["status"] = "failed"
         task["error"] = str(e)
         with open(task_file, "w", encoding="utf-8") as f:
             json.dump(task, f, ensure_ascii=False, indent=2)
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"任务分派失败: {str(e)}",
+        }
 
-        return {"success": False, "error": str(e), "message": f"分派任务失败: {str(e)}"}
+    return {
+        "success": True,
+        "message": f"任务已分派给 {config['name']}",
+        "data": {
+            "task_id": task_id,
+            "worker_id": worker_id,
+            "worker_name": config["name"],
+            "status": "dispatched",
+            "objective": objective,
+            "estimated_duration": "1-5 分钟",
+            "note": "Worker 正在执行",
+        },
+    }
 
 
 def check_task_status(task_id: str) -> Dict[str, Any]:
     """
-    检查任务执行状态
+    检查任务执行状态 (从 Worker 的 outbox 拉取结果)
     """
     task_file = TASKS_DIR / f"{task_id}.json"
-    result_file = Path("outbox") / f"result_{task_id}.json"
+    local_result_file = Path("outbox") / f"result_{task_id}.json"
 
     if not task_file.exists():
         return {
@@ -320,9 +303,37 @@ def check_task_status(task_id: str) -> Dict[str, Any]:
     with open(task_file, "r", encoding="utf-8") as f:
         task = json.load(f)
 
-    # 检查是否有结果文件
-    if result_file.exists():
-        with open(result_file, "r", encoding="utf-8") as f:
+    worker_id = task.get("worker_id")
+
+    # 如果任务已分派，通过 HTTP GET 获取结果
+    if worker_id and task.get("status") in ["dispatched", "running"]:
+        worker_ip = WORKERS.get(worker_id, {}).get("ip")
+        if worker_ip:
+            try:
+                import urllib.request
+
+                worker_url = f"http://{worker_ip}:5000/task/{task_id}/result"
+                req = urllib.request.Request(worker_url, method="GET")
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    result_data = json.loads(response.read().decode("utf-8"))
+                    if result_data.get("status") in ["completed", "failed"]:
+                        # Worker 已完成，保存到本地
+                        with open(local_result_file, "w", encoding="utf-8") as f:
+                            json.dump(result_data, f, ensure_ascii=False, indent=2)
+                        # 更新任务状态
+                        task["status"] = result_data.get("status", "completed")
+                        if result_data.get("completed_at"):
+                            task["completed_at"] = result_data["completed_at"]
+                        else:
+                            task["completed_at"] = datetime.now().isoformat()
+                        with open(task_file, "w", encoding="utf-8") as f:
+                            json.dump(task, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass  # HTTP 请求失败，继续检查本地结果
+
+    # 检查是否有本地结果文件
+    if local_result_file.exists():
+        with open(local_result_file, "r", encoding="utf-8") as f:
             result = json.load(f)
 
         return {
@@ -512,6 +523,6 @@ def register_skills(skill_manager):
     """
     skill_manager.register(
         "task_manager",
-        "任务管理器：查看 Worker 状态、分派任务、检查任务进度。用法: task_manager:action||params",
+        "任务管理器：查看 Worker 状态、分派任务、检查任务进度。关键用法: task_manager:dispatch_task||worker_id||task_description - 必须实际调用此skill来分发任务，不能只说任务已分配",
         execute,
     )
