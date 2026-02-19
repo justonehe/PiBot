@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=justone
 WorkingDirectory=/home/justone/pibot-worker
-Environment="VOLC_API_KEY=4de8e333-96cb-4938-97cc-641e1dbfeac6"
+# API Key should be set in /home/justone/pibot-worker/.env file
 Environment="VOLC_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3"
 Environment="MODEL_NAME=doubao-seed-code"
 Environment="WORKER_ID=worker-1"

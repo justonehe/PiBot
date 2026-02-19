@@ -12,7 +12,7 @@ from flask import Flask, request, jsonify, render_template_string
 from openai import OpenAI
 
 # ----------------- Configuration -----------------
-VOLC_API_KEY = os.environ.get("VOLC_API_KEY", "bada174e-cad9-4a2e-9e0c-ab3b57cec669")
+VOLC_API_KEY = os.environ.get("VOLC_API_KEY", "")
 VOLC_BASE_URL = os.environ.get(
     "VOLC_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3"
 )

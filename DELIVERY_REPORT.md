@@ -70,7 +70,7 @@ Error code: 400 - 'messages.content.type' invalid value: 'tool_call'
 - Master: 192.168.10.113
 - Worker: 192.168.10.66
 - API: 火山引擎 ark-code-latest
-- API Key: 65a6193c-4d61-41bc-847c-8eef4065e18c
+- API Key: [从环境变量读取]
 
 ### 测试用例
 
@@ -119,7 +119,7 @@ curl -X POST http://192.168.10.66:5000/task \
 ### Worker (192.168.10.66)
 ```bash
 # ~/pibot-worker/.env
-VOLC_API_KEY=65a6193c-4d61-41bc-847c-8eef4065e18c
+VOLC_API_KEY=your_api_key_here
 VOLC_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3
 MODEL_NAME=ark-code-latest
 WORKER_ID=worker-1
@@ -132,7 +132,7 @@ python3 worker_task_executor.py
 ### Master (192.168.10.113)
 ```bash
 # 环境变量
-export VOLC_API_KEY=bada174e-cad9-4a2e-9e0c-ab3b57cec669
+export VOLC_API_KEY=your_api_key_here
 export WORKER_1_IP=192.168.10.66
 export WORKER_USER=justone
 
