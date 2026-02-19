@@ -1327,15 +1327,18 @@ if flask_available:
         # 简化日期显示适配7寸屏: 02-19 周三 14:30
         datetime_str = now.strftime("%m-%d %a %H:%M")
 
+        # FontAwesome Icons
         weather_icons = {
-            "sunny": "☀️",
-            "cloudy": "☁️",
-            "rainy": "🌧️",
-            "snowy": "❄️",
-            "stormy": "⛈️",
-            "foggy": "🌫️",
+            "sunny": '<i class="fas fa-sun" style="color:#f1c40f"></i>',
+            "cloudy": '<i class="fas fa-cloud" style="color:#bdc3c7"></i>',
+            "rainy": '<i class="fas fa-cloud-showers-heavy" style="color:#3498db"></i>',
+            "snowy": '<i class="fas fa-snowflake" style="color:#ecf0f1"></i>',
+            "stormy": '<i class="fas fa-bolt" style="color:#f39c12"></i>',
+            "foggy": '<i class="fas fa-smog" style="color:#95a5a6"></i>',
         }
-        w_icon = weather_icons.get(current.get("condition"), "🌤️")
+        default_icon = '<i class="fas fa-cloud-sun" style="color:#f1c40f"></i>'
+
+        w_icon = weather_icons.get(current.get("condition"), default_icon)
         w_temp = current.get("temp", "--")
         w_humidity = current.get("humidity", "--")
         w_location = weather.get("location", "Unknown")
@@ -1343,13 +1346,13 @@ if flask_available:
         # Build forecast HTML
         forecast_html = ""
         for day in forecast:
-            d_icon = weather_icons.get(day.get("condition"), "🌤️")
-            forecast_html += f"<div style='text-align:center;padding:15px;background:#f8f9fa;border-radius:12px;'><div style='font-weight:bold;color:#667eea;'>{day.get('day', '')}</div><div style='font-size:2em;margin:10px 0;'>{d_icon}</div><div>{day.get('high', '--')}° / {day.get('low', '--')}°</div></div>"
+            d_icon = weather_icons.get(day.get("condition"), default_icon)
+            forecast_html += f"<div style='text-align:center;padding:10px;background:#f8f9fa;border-radius:12px;'><div style='font-weight:bold;color:#667eea;font-size:0.9em;'>{day.get('day', '')}</div><div style='font-size:1.8em;margin:8px 0;'>{d_icon}</div><div style='font-size:0.9em;'>{day.get('high', '--')}° / {day.get('low', '--')}°</div></div>"
 
         # Build todos HTML
         todos_html = ""
         if not todos:
-            todos_html = "<li style='padding:12px;background:#f8f9fa;border-radius:10px;margin-bottom:8px;'>暂无待办事项</li>"
+            todos_html = "<li style='padding:12px;background:#f8f9fa;border-radius:10px;margin-bottom:8px;color:#999;'>暂无待办事项</li>"
         else:
             for todo in todos:
                 done_style = (
@@ -1357,23 +1360,28 @@ if flask_available:
                     if todo.get("done")
                     else ""
                 )
-                todos_html += f"<li style='padding:12px;background:#f8f9fa;border-radius:10px;margin-bottom:8px;{done_style}'>☐ {todo.get('text', '')}</li>"
+                icon = (
+                    '<i class="far fa-check-square"></i>'
+                    if todo.get("done")
+                    else '<i class="far fa-square"></i>'
+                )
+                todos_html += f"<li style='padding:10px;background:#f8f9fa;border-radius:10px;margin-bottom:6px;display:flex;align-items:center;gap:10px;{done_style}'>{icon} <span>{todo.get('text', '')}</span></li>"
 
         # Build workers HTML
         workers_html = ""
         for worker in workers:
             status = worker.get("status", "offline")
-            icon = "🔥" if status == "active" else ("💤" if status == "idle" else "❌")
-            bg = (
-                "linear-gradient(135deg,#11998e 0%,#38ef7d 100%);color:white;"
-                if status == "active"
-                else (
-                    "linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;"
-                    if status == "idle"
-                    else "#f8f9fa;"
-                )
-            )
-            workers_html += f"<div style='text-align:center;padding:20px;border-radius:12px;background:{bg}'><div style='font-size:2.5em;margin-bottom:10px;'>{icon}</div><div style='font-weight:bold;'>{worker.get('name', '')}</div><div>{worker.get('statusText', '')}</div></div>"
+            if status == "active":
+                icon = '<i class="fas fa-bolt"></i>'
+                bg = "linear-gradient(135deg,#11998e 0%,#38ef7d 100%);color:white;"
+            elif status == "idle":
+                icon = '<i class="fas fa-coffee"></i>'
+                bg = "linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;"
+            else:
+                icon = '<i class="fas fa-times-circle"></i>'
+                bg = "#e9ecef;color:#666;"
+
+            workers_html += f"<div style='text-align:center;padding:15px 10px;border-radius:12px;background:{bg}'><div style='font-size:2em;margin-bottom:8px;'>{icon}</div><div style='font-weight:bold;font-size:0.95em;'>{worker.get('name', '')}</div><div style='font-size:0.85em;opacity:0.9;'>{worker.get('statusText', '')}</div></div>"
 
         html = f"""<!DOCTYPE html>
 <html>
@@ -1382,65 +1390,45 @@ if flask_available:
     <meta http-equiv="refresh" content="10">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PiBot Dashboard</title>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body {{ font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #333; min-height: 100vh; padding: 8px; margin: 0; font-size: 14px; overflow-x: hidden; }}
-        .dashboard {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-width: 800px; margin: 0 auto; }}
-        .card {{ background: rgba(255,255,255,0.95); border-radius: 8px; padding: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); overflow: hidden; }}
-        .header {{ grid-column: 1 / -1; text-align: center; color: white; padding: 8px 4px; }}
-        .header h1 {{ font-size: 1.6em; margin: 0 0 4px 0; }}
-        .datetime {{ font-size: 0.9em; opacity: 0.9; }}
-        .section-title {{ font-size: 1em; font-weight: bold; margin-bottom: 8px; color: #667eea; display: flex; align-items: center; gap: 4px; }}
-        .weather-current {{ display: flex; align-items: center; gap: 10px; }}
-        .weather-icon {{ font-size: 2.5em; line-height: 1; }}
-        .weather-info h2 {{ font-size: 2em; margin: 0; line-height: 1.2; }}
-        .weather-info p {{ font-size: 0.85em; margin: 2px 0; color: #666; }}
-        .forecast-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }}
-        .forecast-day {{ text-align: center; padding: 6px 4px; background: #f8f9fa; border-radius: 6px; font-size: 0.8em; }}
-        .forecast-day .day {{ font-weight: bold; color: #667eea; font-size: 0.9em; }}
-        .forecast-day .icon {{ font-size: 1.5em; margin: 4px 0; line-height: 1; display: block; }}
-        .forecast-day .temp {{ font-size: 0.85em; }}
-        .todo-list {{ list-style: none; padding: 0; margin: 0; max-height: 150px; overflow-y: auto; }}
-        .todo-item {{ display: flex; align-items: center; padding: 6px 8px; margin-bottom: 4px; background: #f8f9fa; border-radius: 6px; font-size: 0.9em; }}
-        .todo-checkbox {{ width: 14px; height: 14px; margin-right: 8px; flex-shrink: 0; }}
-        .todo-text {{ flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-        .todo-text.done {{ text-decoration: line-through; color: #999; }}
-        .workers-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }}
-        .worker-card {{ text-align: center; padding: 10px 6px; border-radius: 8px; font-size: 0.85em; }}
-        .worker-card.active {{ background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; }}
-        .worker-card.idle {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }}
-        .worker-card.offline {{ background: #e9ecef; color: #666; }}
-        .worker-icon {{ font-size: 1.8em; margin-bottom: 4px; line-height: 1; display: block; }}
-        .worker-name {{ font-weight: bold; margin-bottom: 2px; font-size: 0.9em; }}
-        .worker-status {{ font-size: 0.8em; opacity: 0.9; }}
-        .loading {{ text-align: center; color: #999; padding: 10px; font-size: 0.9em; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #333; min-height: 100vh; padding: 10px; margin: 0; font-size: 14px; overflow-x: hidden; }}
+        .dashboard {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 800px; margin: 0 auto; }}
+        .card {{ background: rgba(255,255,255,0.95); border-radius: 12px; padding: 15px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); overflow: hidden; }}
+        .header {{ grid-column: 1 / -1; text-align: center; color: white; padding: 10px; }}
+        .header h1 {{ font-size: 1.8em; margin: 0 0 5px 0; display: flex; justify-content: center; align-items: center; gap: 10px; }}
+        .datetime {{ font-size: 1.1em; opacity: 0.9; }}
+        .section-title {{ font-size: 1.1em; font-weight: bold; margin-bottom: 12px; color: #667eea; display: flex; align-items: center; gap: 8px; }}
+        .weather-current {{ display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }}
+        .weather-icon {{ font-size: 3em; line-height: 1; }}
+        .weather-info h2 {{ font-size: 2.2em; margin: 0; line-height: 1.2; }}
+        .weather-info p {{ font-size: 0.9em; margin: 2px 0; color: #666; }}
+        .forecast-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }}
+        .todo-list {{ list-style: none; padding: 0; margin: 0; max-height: 200px; overflow-y: auto; }}
+        .workers-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }}
         
         /* 7寸屏幕优化 - 800x480 */
-        @media (max-width: 800px) {{
-            body {{ padding: 6px; font-size: 13px; }}
-            .dashboard {{ gap: 6px; }}
-            .card {{ padding: 10px; border-radius: 6px; }}
-            .header h1 {{ font-size: 1.4em; }}
-            .datetime {{ font-size: 0.8em; }}
-            .section-title {{ font-size: 0.95em; margin-bottom: 6px; }}
-            .weather-icon {{ font-size: 2em; }}
-            .weather-info h2 {{ font-size: 1.6em; }}
-            .forecast-grid {{ gap: 4px; }}
-            .forecast-day {{ padding: 4px 2px; font-size: 0.75em; }}
-            .forecast-day .icon {{ font-size: 1.3em; margin: 2px 0; }}
-            .workers-grid {{ gap: 6px; }}
-            .worker-card {{ padding: 8px 4px; }}
-            .worker-icon {{ font-size: 1.5em; }}
+        @media (max-width: 850px) {{
+            body {{ padding: 5px; font-size: 13px; }}
+            .dashboard {{ gap: 8px; }}
+            .card {{ padding: 12px; }}
+            .header h1 {{ font-size: 1.5em; }}
+            .weather-icon {{ font-size: 2.5em; }}
+            .weather-info h2 {{ font-size: 1.8em; }}
+            .forecast-grid {{ gap: 5px; }}
+            .workers-grid {{ gap: 8px; }}
         }}
     </style>
 </head>
 <body>
     <div class="dashboard">
         <div class="header">
-            <h1>🤖 PiBot Dashboard</h1>
-            <div style="font-size: 1.2em; opacity: 0.9;">{datetime_str}</div>
+            <h1><i class="fas fa-robot"></i> PiBot Dashboard</h1>
+            <div class="datetime">{datetime_str}</div>
         </div>
         <div class="card">
-            <div class="section-title">🌤️ 天气 - {w_location}</div>
+            <div class="section-title"><i class="fas fa-cloud-sun"></i> 天气 - {w_location}</div>
             <div class="weather-current">
                 <div class="weather-icon">{w_icon}</div>
                 <div class="weather-info">
@@ -1451,16 +1439,17 @@ if flask_available:
             <div class="forecast-grid">{forecast_html}</div>
         </div>
         <div class="card">
-            <div class="section-title">📝 待办事项 ({len(todos)})</div>
+            <div class="section-title"><i class="fas fa-clipboard-list"></i> 待办事项 ({len(todos)})</div>
             <ul class="todo-list">{todos_html}</ul>
         </div>
         <div class="card" style="grid-column: 1 / -1;">
-            <div class="section-title">👷 Worker 状态</div>
+            <div class="section-title"><i class="fas fa-network-wired"></i> Worker 状态</div>
             <div class="workers-grid">{workers_html}</div>
         </div>
     </div>
 </body>
 </html>"""
+        return html
         return html
 
     @app.route("/api/dashboard/data")
