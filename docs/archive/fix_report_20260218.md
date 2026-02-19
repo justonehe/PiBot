@@ -3,7 +3,7 @@
 ## 📋 问题描述
 **状态**: ✅ 已解决
 **时间**: 2026-02-18 19:56
-**部署节点**: 192.168.10.113 (Master)
+**部署节点**: <MASTER_IP> (Master)
 
 ### 用户反馈
 > "页面是空白，什么都没有显示"
@@ -93,10 +93,10 @@ function appendMsg(role, text) {
 
 ### 远程服务状态
 ```bash
-$ ssh justone@192.168.10.113 "pgrep -f 'python.*master_hub'"
+$ ssh justone@<MASTER_IP> "pgrep -f 'python.*master_hub'"
 19828  # ✅ 服务运行中
 
-$ curl -s http://192.168.10.113:5000/ | grep -c "Parse Markdown"
+$ curl -s http://<MASTER_IP>:5000/ | grep -c "Parse Markdown"
 1  # ✅ 新代码已加载
 ```
 
@@ -112,7 +112,7 @@ const html = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,
 
 ### 图片文件访问 ✅
 ```bash
-$ curl -I http://192.168.10.113:5000/static/photo_1771414314.jpg
+$ curl -I http://<MASTER_IP>:5000/static/photo_1771414314.jpg
 HTTP/1.1 200 OK
 Content-Type: image/jpeg
 Content-Length: 11892
@@ -150,7 +150,7 @@ Technical Details:
 - Code: `` `code` `` → `<code>code</code>`
 
 Fixes photo display issue in PiBot V3 web interface.
-Tested and verified on 192.168.10.113:5000
+Tested and verified on <MASTER_IP>:5000
 ```
 
 ### GitHub Push
@@ -165,7 +165,7 @@ To https://github.com/justonehe/PiBot.git
 
 ## 🚀 部署状态
 
-### 远程节点 (192.168.10.113)
+### 远程节点 (<MASTER_IP>)
 - **状态**: ✅ 运行中
 - **端口**: 5000
 - **进程**: PID 19828
@@ -173,8 +173,8 @@ To https://github.com/justonehe/PiBot.git
 - **备份**: `~/master_hub.py.backup_*`
 
 ### 访问地址
-- **Desktop**: http://192.168.10.113:5000/
-- **Mobile**: http://192.168.10.113:5000/mobile
+- **Desktop**: http://<MASTER_IP>:5000/
+- **Mobile**: http://<MASTER_IP>:5000/mobile
 
 ---
 

@@ -179,9 +179,9 @@ class WorkerPool:
     
     def __init__(self):
         self.workers = {
-            "worker_1": WorkerProxy("192.168.10.66", "file_io"),
-            "worker_2": WorkerProxy("192.168.10.67", "network"),
-            "worker_3": WorkerProxy("192.168.10.68", "compute")
+            "worker_1": WorkerProxy("<WORKER_IP>", "file_io"),
+            "worker_2": WorkerProxy("<WORKER_2_IP>", "network"),
+            "worker_3": WorkerProxy("<WORKER_3_IP>", "compute")
         }
     
     async def get_status(self) -> dict:
@@ -521,7 +521,7 @@ Master                          Worker
     "timeout_action": "fail",
     "retry_count": 0,
     "max_retries": 2,
-    "master_callback": "http://192.168.10.113:5000/api/worker/result"
+    "master_callback": "http://<MASTER_IP>:5000/api/worker/result"
 }
 
 // 执行结果 (result_{id}.json)

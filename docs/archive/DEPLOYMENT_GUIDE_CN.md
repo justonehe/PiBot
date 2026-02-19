@@ -5,18 +5,18 @@
 本指南帮助您将 PiBot V3 Master-Worker 架构部署到生产环境。
 
 **当前配置**:
-- **Master**: 192.168.10.113 (主控)
-- **Worker**: 192.168.10.66 (单台 Raspberry Pi)
+- **Master**: <MASTER_IP> (主控)
+- **Worker**: <WORKER_IP> (单台 Raspberry Pi)
 
 ## 部署步骤
 
-### 第一步：部署 Worker (192.168.10.66)
+### 第一步：部署 Worker (<WORKER_IP>)
 
 在 Worker 设备上执行以下操作：
 
 ```bash
 # 1. SSH 登录到 Worker
-ssh pi@192.168.10.66
+ssh pi@<WORKER_IP>
 
 # 2. 创建工作目录
 mkdir -p ~/pibot-worker
@@ -110,7 +110,7 @@ sudo systemctl status pibot-worker
 
 ```bash
 # 测试 Worker 是否响应
-curl http://192.168.10.66:5000/health
+curl http://<WORKER_IP>:5000/health
 
 # 应该返回:
 # {
@@ -122,7 +122,7 @@ curl http://192.168.10.66:5000/health
 
 ### 第四步：部署 Master
 
-在 Master 设备 (192.168.10.113) 上：
+在 Master 设备 (<MASTER_IP>) 上：
 
 ```bash
 # 1. 进入 PiBot 目录
@@ -141,7 +141,7 @@ pip3 install aiohttp
 cat >> .env << 'EOF'
 
 # Worker Configuration (单 Worker)
-WORKER_1_IP=192.168.10.66
+WORKER_1_IP=<WORKER_IP>
 EOF
 
 # 5. 更新 soul.md (已创建好新的 soul.md)
@@ -174,7 +174,7 @@ python3 test_integration.py
 
 ## 文件清单
 
-需要复制到 Worker (192.168.10.66) 的文件：
+需要复制到 Worker (<WORKER_IP>) 的文件：
 
 ```
 ~/pibot-worker/
@@ -255,7 +255,7 @@ EOF
 
 ```bash
 # 1. 检查 Worker 是否在运行
-curl http://192.168.10.66:5000/health
+curl http://<WORKER_IP>:5000/health
 
 # 2. 检查防火墙
 sudo ufw status
@@ -293,7 +293,7 @@ python3 --version  # 需要 3.9+
 1. **限制 Worker 访问**
    ```bash
    # 仅允许 Master IP 访问 Worker
-   sudo ufw allow from 192.168.10.113 to any port 5000
+   sudo ufw allow from <MASTER_IP> to any port 5000
    ```
 
 2. **使用非 root 用户运行**
@@ -317,8 +317,8 @@ python3 --version  # 需要 3.9+
 # 1. 在新 Worker 上重复第一步部署
 
 # 2. 在 Master 上添加新 Worker IP
-echo "WORKER_2_IP=192.168.10.67" >> ~/pibot/.env
-echo "WORKER_3_IP=192.168.10.68" >> ~/pibot/.env
+echo "WORKER_2_IP=<WORKER_2_IP>" >> ~/pibot/.env
+echo "WORKER_3_IP=<WORKER_3_IP>" >> ~/pibot/.env
 
 # 3. 重启 Master
 # Master 会自动发现新 Worker
@@ -326,12 +326,12 @@ echo "WORKER_3_IP=192.168.10.68" >> ~/pibot/.env
 
 ## 完成检查清单
 
-- [ ] Worker 代码已复制到 192.168.10.66
+- [ ] Worker 代码已复制到 <WORKER_IP>
 - [ ] Worker 依赖已安装 (flask, aiohttp, openai)
 - [ ] Worker .env 文件已配置 API Key
-- [ ] Worker 已成功启动 (`curl http://192.168.10.66:5000/health` 返回 200)
+- [ ] Worker 已成功启动 (`curl http://<WORKER_IP>:5000/health` 返回 200)
 - [ ] Master 新文件已就位
-- [ ] Master .env 已添加 WORKER_1_IP=192.168.10.66
+- [ ] Master .env 已添加 WORKER_1_IP=<WORKER_IP>
 - [ ] 集成测试通过 (`python3 test_integration.py`)
 
 ## 支持
@@ -339,4 +339,4 @@ echo "WORKER_3_IP=192.168.10.68" >> ~/pibot/.env
 如有问题：
 1. 查看 Worker 日志: `sudo journalctl -u pibot-worker -f`
 2. 查看 Master 日志: `tail -f ~/pibot/logs/master_*.log`
-3. 测试连接: `curl http://192.168.10.66:5000/health`
+3. 测试连接: `curl http://<WORKER_IP>:5000/health`

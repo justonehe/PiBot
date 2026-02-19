@@ -89,7 +89,7 @@ class Config:
     LLM_MAX_RETRIES = int(os.environ.get("LLM_MAX_RETRIES", "2"))
 
     # Worker Configuration
-    WORKER_IP = os.environ.get("WORKER_IP", "192.168.10.66")
+    WORKER_IP = os.environ.get("WORKER_IP", "${WORKER_IP}")
     WORKER_USER = os.environ.get("WORKER_USER", "justone")
     INBOX_REMOTE = "~/inbox"
     OUTBOX_REMOTE = "~/outbox"

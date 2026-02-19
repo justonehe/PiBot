@@ -49,8 +49,8 @@
   - 部署 **Clash Meta** 内核 (Systemd 服务)。
   - 启用外部控制 (9090)。
 - **使用**:
-  - **Dashboard**: [Yacd](http://yacd.haishan.me/?backend=http://192.168.10.113:9090)
-  - **代理**: `192.168.10.113:7890`
+  - **Dashboard**: [Yacd](http://yacd.haishan.me/?backend=http://<MASTER_IP>:9090)
+  - **代理**: `<MASTER_IP>:7890`
 - **状态**: ✅ 服务运行中。
 
 ## 8. 🧠 认知效能工程化

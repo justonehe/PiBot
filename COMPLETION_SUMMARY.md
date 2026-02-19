@@ -30,7 +30,7 @@ All 8 tasks have been successfully completed. Here's the summary:
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                           MASTER NODE                               │
-│                    (192.168.10.113:5000)                            │
+│                    (<MASTER_IP>:5000)                               │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  ┌─────────────────┐    ┌──────────────────┐    ┌──────────────┐  │
@@ -43,18 +43,18 @@ All 8 tasks have been successfully completed. Here's the summary:
 │           ▼                                           ▼          │
 │  ┌─────────────────┐                         ┌──────────────┐  │
 │  │  Local Agent    │                         │   Worker 1   │  │
-│  │    Core         │                         │192.168.10.66 │  │
+│  │    Core         │                         │ <WORKER_IP>  │  │
 │  │ (Simple tasks)  │                         └──────────────┘  │
 │  └─────────────────┘                                  ▲          │
 │           │                                           │          │
 │           │                              ┌────────────┴───────┐  │
 │           │                              │   Worker 2         │  │
-│           │                              │192.168.10.67:5000  │  │
+│           │                              │ <WORKER_2_IP>      │  │
 │           │                              └────────────┬───────┘  │
 │           │                                           │          │
 │           │                              ┌────────────┴───────┐  │
 │           │                              │   Worker 3         │  │
-│           │                              │192.168.10.68:5000  │  │
+│           │                              │ <WORKER_3_IP>      │  │
 │           │                              └────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -145,7 +145,7 @@ All 8 tasks have been successfully completed. Here's the summary:
 ### 1. Start Workers (on each Pi Zero)
 
 ```bash
-# On 192.168.10.66, 67, 68
+# On Workers
 python3 worker_task_executor.py --port 5000 --worker-id worker-1
 ```
 
@@ -207,9 +207,9 @@ python3 test_integration.py
 VOLC_API_KEY=your_api_key
 VOLC_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3
 MODEL_NAME=doubao-seed-code
-WORKER_1_IP=192.168.10.66
-WORKER_2_IP=192.168.10.67
-WORKER_3_IP=192.168.10.68
+WORKER_1_IP=<WORKER_IP>
+WORKER_2_IP=<WORKER_2_IP>
+WORKER_3_IP=<WORKER_3_IP>
 ```
 
 ### Workers

@@ -6,7 +6,7 @@
 **重大更新：Master-Worker 架构实现**
 
 - ✅ 实现 Agent Core 核心模块（基于 pi-mono 架构）
-- ✅ 部署 Worker 到 192.168.10.66
+- ✅ 部署 Worker 到 <WORKER_IP>
 - ✅ 配置模型为 ark-code-latest
 - ✅ Master 与 Worker 通信协议实现
 - ✅ Systemd 服务自动启动配置
@@ -44,12 +44,12 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         MASTER NODE                              │
-│                      192.168.10.113:5000                         │
+│                      <MASTER_IP>:5000                            │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │   ┌──────────────┐    ┌──────────────┐    ┌─────────────────┐  │
 │   │  TaskPlanner │───▶│  WorkerPool  │───▶│  Worker (HTTP)  │  │
-│   │  任务分析     │    │  Worker管理   │    │  192.168.10.66  │  │
+│   │  任务分析     │    │  Worker管理   │    │  <WORKER_IP>    │  │
 │   └──────────────┘    └──────────────┘    └─────────────────┘  │
 │          │                                                    │
 │          ▼                                                    │
@@ -69,7 +69,7 @@
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                         WORKER NODE                              │
-│                      192.168.10.66:5000                          │
+│                      <WORKER_IP>:5000                            │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │   HTTP API Endpoints:                                           │
@@ -207,7 +207,7 @@ class WorkerExecutor:
 ### Master → Worker (任务分派)
 
 ```http
-POST http://192.168.10.66:5000/task
+POST http://<WORKER_IP>:5000/task
 Content-Type: application/json
 
 {
@@ -229,7 +229,7 @@ Content-Type: application/json
 ### Master → Worker (获取结果)
 
 ```http
-GET http://192.168.10.66:5000/task/task_001/result
+GET http://<WORKER_IP>:5000/task/task_001/result
 ```
 
 **响应：**
@@ -249,7 +249,7 @@ GET http://192.168.10.66:5000/task/task_001/result
 
 ## 配置文件
 
-### Master (192.168.10.113)
+### Master (<MASTER_IP>)
 **文件：** `~/pibot.env`
 
 ```bash
@@ -259,10 +259,10 @@ VOLC_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3
 MODEL_NAME=ark-code-latest
 
 # Worker 配置
-WORKER_1_IP=192.168.10.66
+WORKER_1_IP=<WORKER_IP>
 ```
 
-### Worker (192.168.10.66)
+### Worker (<WORKER_IP>)
 **文件：** `~/pibot-worker/.env`
 
 ```bash
@@ -283,8 +283,8 @@ WORKER_ID=worker-1
 
 | 组件 | IP | 状态 | 备注 |
 |------|-----|------|------|
-| Master | 192.168.10.113 | ✅ 运行中 | PID: 2821 |
-| Worker-1 | 192.168.10.66 | ✅ 运行中 | Systemd 服务 |
+| Master | <MASTER_IP> | ✅ 运行中 | PID: 2821 |
+| Worker-1 | <WORKER_IP> | ✅ 运行中 | Systemd 服务 |
 
 ### 服务管理
 
@@ -318,9 +318,9 @@ python3 ~/master_hub.py
 
 ## 访问地址
 
-- **Master Web**: http://192.168.10.113:5000
-- **Dashboard**: http://192.168.10.113:5000/dashboard
-- **Worker Health**: http://192.168.10.66:5000/health
+- **Master Web**: http://<MASTER_IP>:5000
+- **Dashboard**: http://<MASTER_IP>:5000/dashboard
+- **Worker Health**: http://<WORKER_IP>:5000/health
 
 ---
 

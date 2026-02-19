@@ -1,7 +1,7 @@
 # 🖼️ 图片显示修复完成
 
 ## 问题描述
-Master 节点 (192.168.10.113) 网页上只能显示摄像头拍照后的图片文字链接，无法渲染成图片。
+Master 节点 (<MASTER_IP>) 网页上只能显示摄像头拍照后的图片文字链接，无法渲染成图片。
 
 例如显示：`![Live Photo](/static/photo_1771414314.jpg)` 而不是实际图片
 
@@ -57,16 +57,16 @@ Rendered: 已为您拍摄照片：<img src="/static/photo_1771414314.jpg" alt="L
 
 ### 2. 远程服务状态 ✅
 ```bash
-$ ssh justone@192.168.10.113 "pgrep -f 'python.*master_hub'"
+$ ssh justone@<MASTER_IP> "pgrep -f 'python.*master_hub'"
 18965  # ✅ 服务运行中
 
-$ curl -s http://192.168.10.113:5000/ | grep -c "Parse Markdown"
+$ curl -s http://<MASTER_IP>:5000/ | grep -c "Parse Markdown"
 1  # ✅ 新代码已加载
 ```
 
 ### 3. 静态文件访问 ✅
 ```bash
-$ curl -I http://192.168.10.113:5000/static/photo_1771414314.jpg
+$ curl -I http://<MASTER_IP>:5000/static/photo_1771414314.jpg
 HTTP/1.1 200 OK
 Content-Type: image/jpeg
 Content-Length: 11892
@@ -85,7 +85,7 @@ Content-Length: 11892
 ## 部署说明
 
 ### 远程部署状态
-- **主机**: 192.168.10.113 (pibot)
+- **主机**: <MASTER_IP> (pibot)
 - **状态**: ✅ 已部署并运行
 - **端口**: 5000
 - **备份**: `~/master_hub.py.backup_YYYYMMDD_HHMMSS`
@@ -113,8 +113,8 @@ git push origin main
 ## 使用方式
 
 ### 访问 Web UI
-- **Desktop**: http://192.168.10.113:5000/
-- **Mobile**: http://192.168.10.113:5000/mobile
+- **Desktop**: http://<MASTER_IP>:5000/
+- **Mobile**: http://<MASTER_IP>:5000/mobile
 
 ### 拍照测试
 1. 在聊天框输入: "Take a photo"

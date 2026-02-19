@@ -13,15 +13,18 @@ from openai import OpenAI
 
 # ----------------- Configuration -----------------
 VOLC_API_KEY = os.environ.get("VOLC_API_KEY", "bada174e-cad9-4a2e-9e0c-ab3b57cec669")
-VOLC_BASE_URL = os.environ.get("VOLC_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
+VOLC_BASE_URL = os.environ.get(
+    "VOLC_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3"
+)
 MODEL_NAME = os.environ.get("MODEL_NAME", "doubao-seed-code")
 
-WORKER_IP = os.environ.get("WORKER_IP", "192.168.10.66")
+WORKER_IP = os.environ.get("WORKER_IP", "${WORKER_IP}")
 WORKER_USER = os.environ.get("WORKER_USER", "justone")
 INBOX_REMOTE = "~/inbox"
 OUTBOX_REMOTE = "~/outbox"
 
 TAPE_FILE = Path("memory.jsonl")
+
 
 # ----------------- Core Logic -----------------
 def append_to_tape(role, content, meta=None):
@@ -30,11 +33,12 @@ def append_to_tape(role, content, meta=None):
         "ts": datetime.now().isoformat(),
         "role": role,
         "content": content,
-        "meta": meta or {}
+        "meta": meta or {},
     }
     with open(TAPE_FILE, "a") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     return entry
+
 
 def read_tape(limit=20):
     if not TAPE_FILE.exists():
@@ -49,6 +53,7 @@ def read_tape(limit=20):
             pass
     return entries
 
+
 def get_local_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -59,8 +64,10 @@ def get_local_ip():
     except:
         return "127.0.0.1"
 
+
 # ----------------- LLM & Skills -----------------
 client = OpenAI(api_key=VOLC_API_KEY, base_url=VOLC_BASE_URL)
+
 
 def dispatch_task(cmd):
     task_id = f"task-{int(time.time())}"
@@ -71,6 +78,7 @@ def dispatch_task(cmd):
     scp_cmd = f"scp -o StrictHostKeyChecking=no {local_file} {WORKER_USER}@{WORKER_IP}:{INBOX_REMOTE}/{task_id}.json"
     subprocess.run(scp_cmd, shell=True)
     return {"status": "dispatched", "id": task_id}
+
 
 # ----------------- Flask Web UI -----------------
 app = Flask(__name__)
@@ -165,28 +173,33 @@ HTML_BASE = """
 </html>
 """
 
-@app.route('/')
+
+@app.route("/")
 def index():
     return render_template_string(HTML_BASE, title="PiBot Desktop", ip=get_local_ip())
 
-@app.route('/mobile')
+
+@app.route("/mobile")
 def mobile():
     return render_template_string(HTML_BASE, title="PiBot Mobile", ip=get_local_ip())
 
-@app.route('/api/history')
+
+@app.route("/api/history")
 def api_history():
     history = read_tape(20)
     ts = os.path.getmtime(TAPE_FILE) if TAPE_FILE.exists() else 0
     return jsonify({"history": history, "timestamp": ts})
 
-@app.route('/api/chat', methods=['POST'])
+
+@app.route("/api/chat", methods=["POST"])
 def chat():
     data = request.json
     user_msg = data.get("msg")
     append_to_tape("user", user_msg)
-    
+
     try:
         from skill_manager import SkillManager
+
         skill_mgr = SkillManager()
         skill_mgr.load_skills()
         skill_prompt = skill_mgr.get_prompt()
@@ -196,33 +209,34 @@ def chat():
 
     messages = [
         {"role": "system", "content": f"你是 Master Agent。当前技能：\n{skill_prompt}"},
-        {"role": "user", "content": user_msg}
+        {"role": "user", "content": user_msg},
     ]
-    
+
     try:
         response = client.chat.completions.create(model=MODEL_NAME, messages=messages)
         ai_reply = response.choices[0].message.content
-        
+
         # Handle Skill Execution
         if "<call_skill>" in ai_reply and skill_mgr:
             start = ai_reply.find("<call_skill>") + 12
             end = ai_reply.find("</call_skill>")
             content = ai_reply[start:end].strip()
-            
+
             if ":" in content:
                 skill_name, args = content.split(":", 1)
                 result = skill_mgr.execute(skill_name, args)
             else:
                 result = skill_mgr.execute(content)
-                
+
             append_to_tape("assistant", f"{ai_reply}\n[Result]: {result}")
             return jsonify({"reply": "executed"})
-            
+
         append_to_tape("assistant", ai_reply)
         return jsonify({"reply": ai_reply})
     except Exception as e:
         return jsonify({"reply": f"Error: {e}"})
 
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    app.run(host='0.0.0.0', port=5000, threaded=True)
+    app.run(host="0.0.0.0", port=5000, threaded=True)

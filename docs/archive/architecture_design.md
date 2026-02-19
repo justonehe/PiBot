@@ -14,12 +14,12 @@ graph TD
     User((用户)) <-->|视觉/触控| Master[Master 节点 (UI)]
     Cloud(火山引擎 LLM) <-->|API 调用| Master
 
-    subgraph Master_Node [Master: pibot (192.168.10.113)]
+    subgraph Master_Node [Master: pibot (<MASTER_IP>)]
         UI[Tkinter 界面]
         Router[意图识别/路由]
     end
 
-    subgraph Worker_Node [Worker: pibot-brain (192.168.10.66)]
+    subgraph Worker_Node [Worker: pibot-brain (<WORKER_IP>)]
         Server[HTTP/MQTT 监听]
         Executor[执行器 (Shell/Docker)]
         Tools[技能库 (爬虫/下载/控制)]

@@ -1,6 +1,6 @@
 #!/bin/bash
 # PiBot V3 Worker Deployment Script
-# Run this on the Worker (192.168.10.66)
+# Run this on the Worker (e.g. <WORKER_IP>)
 
 set -e
 
@@ -9,13 +9,14 @@ echo "PiBot V3 Worker Deployment"
 echo "==============================================="
 echo ""
 
-# Configuration
-WORKER_IP="192.168.10.66"
-WORKER_ID="worker-1"
+# Configuration - CHANGE THESE VALUES
+WORKER_IP="${WORKER_IP:-127.0.0.1}"
+WORKER_ID="${WORKER_ID:-worker-1}"
 INSTALL_DIR="$HOME/pibot-worker"
 
 echo "Installing to: $INSTALL_DIR"
 echo "Worker ID: $WORKER_ID"
+echo "Worker IP: $WORKER_IP"
 echo ""
 
 # Create directory

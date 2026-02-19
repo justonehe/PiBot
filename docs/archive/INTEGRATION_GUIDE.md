@@ -7,8 +7,8 @@ This guide walks you through deploying and testing the new Master-Worker archite
 ## Prerequisites
 
 ### Hardware
-- **Master**: Raspberry Pi 4 (192.168.10.113)
-- **Workers**: 3x Raspberry Pi Zero 2W (192.168.10.66, 67, 68)
+- **Master**: Raspberry Pi 4 (<MASTER_IP>)
+- **Workers**: 3x Raspberry Pi Zero 2W (<WORKER_IP>, 67, 68)
 - All devices on same network
 - SSH access to all devices
 
@@ -21,11 +21,11 @@ This guide walks you through deploying and testing the new Master-Worker archite
 
 ### 1. Deploy Workers (3x Raspberry Pi Zeros)
 
-On **each Worker** (192.168.10.66, 67, 68):
+On **each Worker** (<WORKER_IP>, 67, 68):
 
 ```bash
 # SSH into Worker
-ssh pi@192.168.10.66  # Repeat for .67 and .68
+ssh pi@<WORKER_IP>  # Repeat for .67 and .68
 
 # Create project directory
 mkdir -p ~/pibot-worker
@@ -33,11 +33,11 @@ cd ~/pibot-worker
 
 # Copy files from Master (or clone from git)
 # Option 1: Copy via SCP
-scp -r master@192.168.10.113:~/pibot/skills ./
-scp master@192.168.10.113:~/pibot/agent_core.py ./
-scp master@192.168.10.113:~/pibot/llm_client.py ./
-scp master@192.168.10.113:~/pibot/tool_registry.py ./
-scp master@192.168.10.113:~/pibot/worker_task_executor.py ./
+scp -r master@<MASTER_IP>:~/pibot/skills ./
+scp master@<MASTER_IP>:~/pibot/agent_core.py ./
+scp master@<MASTER_IP>:~/pibot/llm_client.py ./
+scp master@<MASTER_IP>:~/pibot/tool_registry.py ./
+scp master@<MASTER_IP>:~/pibot/worker_task_executor.py ./
 
 # Option 2: Clone repository
 git clone https://github.com/yourusername/pibot-v3.git
@@ -109,27 +109,27 @@ nohup python3 worker_task_executor.py --port 5000 --worker-id worker-1 > worker.
 Verify Worker is running:
 ```bash
 # Check if service is up
-curl http://192.168.10.66:5000/health
+curl http://<WORKER_IP>:5000/health
 
 # Expected response:
 # {"status": "healthy", "worker_id": "worker-1", "current_task": null}
 ```
 
 **Repeat for all 3 Workers** (changing IPs and worker IDs):
-- Worker-1: 192.168.10.66:5000
-- Worker-2: 192.168.10.67:5000  
-- Worker-3: 192.168.10.68:5000
+- Worker-1: <WORKER_IP>:5000
+- Worker-2: <WORKER_2_IP>:5000  
+- Worker-3: <WORKER_3_IP>:5000
 
 ### 2. Configure Master
 
-On **Master** (192.168.10.113):
+On **Master** (<MASTER_IP>):
 
 Update environment variables:
 ```bash
 # Add to ~/.bashrc or create ~/.env file
-export WORKER_1_IP=192.168.10.66
-export WORKER_2_IP=192.168.10.67
-export WORKER_3_IP=192.168.10.68
+export WORKER_1_IP=<WORKER_IP>
+export WORKER_2_IP=<WORKER_2_IP>
+export WORKER_3_IP=<WORKER_3_IP>
 ```
 
 Copy the new soul.md:
@@ -177,9 +177,9 @@ sudo systemctl status pibot-worker
 
 ```bash
 # Test each Worker
-curl http://192.168.10.66:5000/health
-curl http://192.168.10.67:5000/health
-curl http://192.168.10.68:5000/health
+curl http://<WORKER_IP>:5000/health
+curl http://<WORKER_2_IP>:5000/health
+curl http://<WORKER_3_IP>:5000/health
 
 # Expected response for each:
 # {
@@ -193,7 +193,7 @@ curl http://192.168.10.68:5000/health
 
 ```bash
 # Send a simple task to Worker-1
-curl -X POST http://192.168.10.66:5000/task \
+curl -X POST http://<WORKER_IP>:5000/task \
   -H "Content-Type: application/json" \
   -d '{
     "task_id": "test_001",
@@ -204,14 +204,14 @@ curl -X POST http://192.168.10.66:5000/task \
 # Expected: {"success": true, "task_id": "test_001", "status": "accepted"}
 
 # Wait a few seconds, then get result
-curl http://192.168.10.66:5000/task/test_001/result
+curl http://<WORKER_IP>:5000/task/test_001/result
 ```
 
 ### Test 3: Network Task
 
 ```bash
 # Send a network task to Worker-2
-curl -X POST http://192.168.10.67:5000/task \
+curl -X POST http://<WORKER_2_IP>:5000/task \
   -H "Content-Type: application/json" \
   -d '{
     "task_id": "test_download",
@@ -220,7 +220,7 @@ curl -X POST http://192.168.10.67:5000/task \
   }'
 
 # Check result
-curl http://192.168.10.67:5000/task/test_download/result
+curl http://<WORKER_2_IP>:5000/task/test_download/result
 ```
 
 ### Test 4: Master Integration Test
@@ -374,7 +374,7 @@ if __name__ == "__main__":
 
 ```bash
 # Check if Flask app is running
-curl http://192.168.10.66:5000/health
+curl http://<WORKER_IP>:5000/health
 
 # Check logs
 sudo journalctl -u pibot-worker -f
@@ -394,13 +394,13 @@ result = await worker_pool.execute_task(subtask, timeout=600)  # 10 minutes
 
 ```bash
 # Check network connectivity
-ping 192.168.10.66
+ping <WORKER_IP>
 
 # Check firewall
 sudo ufw status
 
 # Check if port is open
-nc -zv 192.168.10.66 5000
+nc -zv <WORKER_IP> 5000
 ```
 
 ### Import Errors
@@ -419,7 +419,7 @@ python3 --version  # Should be 3.9+
 
 Access Master's dashboard:
 ```
-http://192.168.10.113:5000/dashboard
+http://<MASTER_IP>:5000/dashboard
 ```
 
 Should show:
@@ -488,21 +488,21 @@ Verify the architecture is working correctly:
 1. **Worker Independence**
    ```bash
    # Worker 1 should not see Worker 2's files
-   curl -X POST http://192.168.10.66:5000/task \
+   curl -X POST http://<WORKER_IP>:5000/task \
      -d '{"task_id":"test","description":"Create test file","skills":["file_ops"]}'
    
-   curl http://192.168.10.67:5000/task/test/result
+   curl http://<WORKER_2_IP>:5000/task/test/result
    # Should show file not found (different filesystem)
    ```
 
 2. **Memory Isolation**
    ```bash
    # Run task on Worker
-   curl -X POST http://192.168.10.66:5000/task \
+   curl -X POST http://<WORKER_IP>:5000/task \
      -d '{"task_id":"mem1","description":"Remember this: secret123","skills":[]}'
    
    # Run another task
-   curl -X POST http://192.168.10.66:5000/task \
+   curl -X POST http://<WORKER_IP>:5000/task \
      -d '{"task_id":"mem2","description":"What did I say?","skills":[]}'
    
    # Second task should not know about "secret123"

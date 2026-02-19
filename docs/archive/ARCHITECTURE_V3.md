@@ -100,9 +100,9 @@ Master 评估任务复杂度
 class WorkerManager:
     def __init__(self):
         self.workers = {
-            "worker_1": Worker("worker_1", "192.168.10.66"),
-            "worker_2": Worker("worker_2", "192.168.10.67"),  # 预留
-            "worker_3": Worker("worker_3", "192.168.10.68"),  # 预留
+            "worker_1": Worker("worker_1", "<WORKER_IP>"),
+            "worker_2": Worker("worker_2", "<WORKER_2_IP>"),  # 预留
+            "worker_3": Worker("worker_3", "<WORKER_3_IP>"),  # 预留
         }
         self.task_queue = []  # 待分配任务
         self.active_tasks = {}  # 执行中任务
@@ -322,7 +322,7 @@ class TaskWorker:
     "priority": "normal",
     "ttl": 300,
     "skills_required": ["web_fetch", "file_write"],
-    "master_callback": "http://192.168.10.113:5000/api/worker/result",
+    "master_callback": "http://<MASTER_IP>:5000/api/worker/result",
     "worker_id": "worker_1"
 }
 ```

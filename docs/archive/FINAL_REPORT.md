@@ -19,7 +19,7 @@
 
 ### ✅ 2. 仪表盘刷新 (19:50)
 - Chromium Kiosk 重启
-- 页面：http://192.168.10.113:5000/
+- 页面：http://<MASTER_IP>:5000/
 - 状态：✅ 正常显示
 
 ### ✅ 3. 技能系统增强 (20:00-20:10)
@@ -138,15 +138,15 @@ ea6b93b - docs: add comprehensive fix report
 ## 🔗 访问地址
 
 - **GitHub**: https://github.com/justonehe/PiBot
-- **Master**: http://192.168.10.113:5000/
-- **Mobile**: http://192.168.10.113:5000/mobile
+- **Master**: http://<MASTER_IP>:5000/
+- **Mobile**: http://<MASTER_IP>:5000/mobile
 
 ## 💡 下次使用
 
 ### 快速更新流程
 ```bash
 1. 本地修改 skills/*.py
-2. scp skills/new_skill.py justone@192.168.10.113:~/skills/
+2. scp skills/new_skill.py justone@<MASTER_IP>:~/skills/
 3. curl 访问 reload_skills
 4. 完成！
 ```

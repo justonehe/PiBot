@@ -9,7 +9,7 @@ The Master-Worker architecture has been fully implemented. This document describ
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                           MASTER NODE                               │
-│                      (192.168.10.113:5000)                          │
+│                      (<MASTER_IP>:5000)                          │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  ┌─────────────────┐    ┌──────────────────┐    ┌──────────────┐  │
@@ -22,18 +22,18 @@ The Master-Worker architecture has been fully implemented. This document describ
 │           ▼                                           ▼          │
 │  ┌─────────────────┐                         ┌──────────────┐  │
 │  │  Local Agent    │                         │   Worker 1   │  │
-│  │    Core         │                         │192.168.10.66 │  │
+│  │    Core         │                         │<WORKER_IP> │  │
 │  │ (Simple tasks)  │                         └──────────────┘  │
 │  └─────────────────┘                                  ▲          │
 │           │                                           │          │
 │           │                              ┌────────────┴───────┐  │
 │           │                              │   Worker 2         │  │
-│           │                              │192.168.10.67:5000  │  │
+│           │                              │<WORKER_2_IP>:5000  │  │
 │           │                              └────────────┬───────┘  │
 │           │                                           │          │
 │           │                              ┌────────────┴───────┐  │
 │           │                              │   Worker 3         │  │
-│           │                              │192.168.10.68:5000  │  │
+│           │                              │<WORKER_3_IP>:5000  │  │
 │           │                              └────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 
@@ -142,7 +142,7 @@ Key Classes:
 
 ### Master → Worker (Task Assignment)
 ```http
-POST http://192.168.10.66:5000/task
+POST http://<WORKER_IP>:5000/task
 Content-Type: application/json
 
 {
@@ -163,7 +163,7 @@ Response:
 
 ### Master → Worker (Get Result)
 ```http
-GET http://192.168.10.66:5000/task/task_001/result
+GET http://<WORKER_IP>:5000/task/task_001/result
 ```
 
 Response:
@@ -183,7 +183,7 @@ Response:
 
 ### Master → Worker (Health Check)
 ```http
-GET http://192.168.10.66:5000/health
+GET http://<WORKER_IP>:5000/health
 ```
 
 Response:
@@ -227,9 +227,9 @@ VOLC_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3
 MODEL_NAME=doubao-seed-code
 
 # Worker IPs
-WORKER_1_IP=192.168.10.66
-WORKER_2_IP=192.168.10.67
-WORKER_3_IP=192.168.10.68
+WORKER_1_IP=<WORKER_IP>
+WORKER_2_IP=<WORKER_2_IP>
+WORKER_3_IP=<WORKER_3_IP>
 ```
 
 ### Worker Nodes
@@ -242,7 +242,7 @@ WORKER_ID=worker-1  # Unique identifier
 
 ### Starting Workers
 
-On each Worker Pi (192.168.10.66, 67, 68):
+On each Worker Pi (<WORKER_IP>, 67, 68):
 ```bash
 cd /path/to/pibot
 python3 worker_task_executor.py --port 5000 --worker-id worker-1

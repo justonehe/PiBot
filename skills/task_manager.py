@@ -6,15 +6,28 @@ Task Manager Skill for PiBot Master
 import json
 import time
 import subprocess
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 # Worker 配置
 WORKERS = {
-    "worker_1": {"ip": "192.168.10.66", "name": "Worker-1", "type": "file_io"},
-    "worker_2": {"ip": "192.168.10.67", "name": "Worker-2", "type": "network"},
-    "worker_3": {"ip": "192.168.10.68", "name": "Worker-3", "type": "compute"},
+    "worker_1": {
+        "ip": os.environ.get("WORKER_1_IP", "${WORKER_1_IP}"),
+        "name": "Worker-1",
+        "type": "file_io",
+    },
+    "worker_2": {
+        "ip": os.environ.get("WORKER_2_IP", "${WORKER_2_IP}"),
+        "name": "Worker-2",
+        "type": "network",
+    },
+    "worker_3": {
+        "ip": os.environ.get("WORKER_3_IP", "${WORKER_3_IP}"),
+        "name": "Worker-3",
+        "type": "compute",
+    },
 }
 
 # 任务状态存储

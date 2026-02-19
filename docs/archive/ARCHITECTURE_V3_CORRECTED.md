@@ -89,9 +89,9 @@
 ## Worker 管理
 
 你有 3 个 Worker：
-- **Worker-1** (192.168.10.66): 文件和 IO 任务，本地硬件控制
-- **Worker-2** (192.168.10.67): 网络和 API 任务
-- **Worker-3** (192.168.10.68): 计算密集型任务，复杂数据处理
+- **Worker-1** (<WORKER_IP>): 文件和 IO 任务，本地硬件控制
+- **Worker-2** (<WORKER_2_IP>): 网络和 API 任务
+- **Worker-3** (<WORKER_3_IP>): 计算密集型任务，复杂数据处理
 
 **状态**: 闲置(IDLE) / 工作中(BUSY) / 离线(OFFLINE)
 

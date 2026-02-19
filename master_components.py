@@ -618,7 +618,7 @@ def create_default_worker_pool() -> WorkerPool:
     workers_config = []
 
     # Worker 1 (primary)
-    worker1_ip = os.environ.get("WORKER_1_IP", "192.168.10.66")
+    worker1_ip = os.environ.get("WORKER_1_IP", "${WORKER_1_IP}")
     if worker1_ip:
         workers_config.append(("worker-1", worker1_ip))
 

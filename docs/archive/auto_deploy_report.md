@@ -41,7 +41,7 @@
 
 ### 4. ✅ 服务状态
 
-**Master 服务**: http://192.168.10.113:5000/
+**Master 服务**: http://<MASTER_IP>:5000/
 - **进程**: 运行中 (PID 21207)
 - **端口**: 5000 正常监听
 - **日志**: ~/master.log
@@ -185,7 +185,7 @@ git commit -m "feat: add self-creating skill system
 - Add list_skills: show all skills with descriptions
 - Add reload_skills: hot-reload without restart
 - Add skill_help: comprehensive usage guide
-- Auto-deploy to Master (192.168.10.113:5000)
+- Auto-deploy to Master (<MASTER_IP>:5000)
 - Create example skills (hello_world, demo_skill)
 
 Fully automated: local dev → SCP upload → service reload
@@ -197,8 +197,8 @@ git push origin main
 ## 🔗 快速访问
 
 - **GitHub**: https://github.com/justonehe/PiBot
-- **Master UI**: http://192.168.10.113:5000/
-- **Mobile**: http://192.168.10.113:5000/mobile
+- **Master UI**: http://<MASTER_IP>:5000/
+- **Mobile**: http://<MASTER_IP>:5000/mobile
 
 ---
 
