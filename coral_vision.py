@@ -11,6 +11,22 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+# Skill metadata for registration
+SKILL_META = {
+    "name": "coral_vision",
+    "description": "使用 Coral TPU 或 OpenCV 分析图像，支持物体检测和颜色分析。用法: coral_vision:image_path||operation",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "args": {
+                "type": "string",
+                "description": "图像路径和操作，格式: image_path||operation (operation可选: detect_objects, analyze_color, full_analysis)",
+            }
+        },
+        "required": ["args"],
+    },
+}
+
 # 配置
 MODEL_DIR = Path.home() / "coral_models"
 DEFAULT_MODEL = MODEL_DIR / "mobilenet_v2_1.0_224_inat_bird_quant_edgetpu.tflite"
