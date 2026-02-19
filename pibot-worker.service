@@ -1,0 +1,20 @@
+[Unit]
+Description=PiBot V3 Worker
+After=network.target
+
+[Service]
+Type=simple
+User=justone
+WorkingDirectory=/home/justone/pibot-worker
+Environment="VOLC_API_KEY=4de8e333-96cb-4938-97cc-641e1dbfeac6"
+Environment="VOLC_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3"
+Environment="MODEL_NAME=doubao-seed-code"
+Environment="WORKER_ID=worker-1"
+ExecStart=/usr/bin/python3 /home/justone/pibot-worker/worker_task_executor.py --port 5000 --worker-id worker-1
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/justone/pibot-worker/logs/worker.log
+StandardError=append:/home/justone/pibot-worker/logs/worker.log
+
+[Install]
+WantedBy=multi-user.target

@@ -49,6 +49,29 @@ def setup_logging():
 logger = setup_logging()
 
 # ============================================================================
+# 1.5 导入新组件 (Agent Core, TaskPlanner, WorkerPool)
+# ============================================================================
+
+try:
+    from agent_core import (
+        AgentCore,
+        AgentContext,
+        AgentRole,
+        AgentEventStream,
+        create_user_message,
+    )
+    from llm_client import create_llm_client_from_env
+    from tool_registry import get_tool_registry
+    from master_components import TaskPlanner, create_default_worker_pool
+
+    NEW_COMPONENTS_AVAILABLE = True
+    logger.info("New Agent Core components imported successfully")
+except ImportError as e:
+    NEW_COMPONENTS_AVAILABLE = False
+    logger.warning(f"New components not available: {e}")
+
+
+# ============================================================================
 # 2. 配置管理（带验证）
 # ============================================================================
 
@@ -936,12 +959,21 @@ if flask_available:
 
         ai_reply = response.choices[0].message.content
 
-        # Handle skill calls
-        if "<call_skill>" in ai_reply and skill_mgr:
+        # Handle skill calls with multi-step execution
+        max_iterations = 10  # 防止无限循环
+        iteration = 0
+        current_reply = ai_reply
+
+        while (
+            "<call_skill>" in current_reply and skill_mgr and iteration < max_iterations
+        ):
+            iteration += 1
+            logger.info(f"Executing skill call (iteration {iteration})")
+
             try:
-                start = ai_reply.find("<call_skill>") + 12
-                end = ai_reply.find("</call_skill>")
-                content = ai_reply[start:end].strip()
+                start = current_reply.find("<call_skill>") + 12
+                end = current_reply.find("</call_skill>")
+                content = current_reply[start:end].strip()
 
                 if ":" in content:
                     skill_name, args = content.split(":", 1)
@@ -950,29 +982,37 @@ if flask_available:
                     skill_result = skill_mgr.execute(content)
 
                 # Follow-up with skill result
-                messages.append({"role": "assistant", "content": ai_reply})
+                messages.append({"role": "assistant", "content": current_reply})
                 messages.append(
                     {
                         "role": "user",
-                        "content": f"技能执行结果：{json.dumps(skill_result, ensure_ascii=False)}\n\n请根据这个结果回答我的问题。",
+                        "content": f"技能执行结果：{json.dumps(skill_result, ensure_ascii=False)}\n\n请根据这个结果继续完成任务。如果需要执行更多操作，请继续使用 <call_skill> 标签。",
                     }
                 )
 
-                final_response = llm.chat(messages)
-                if final_response:
-                    final_reply = final_response.choices[0].message.content
-                    memory.append("assistant", final_reply)
-                    return jsonify({"reply": final_reply})
+                # 继续对话以检查是否需要更多步骤
+                next_response = llm.chat(messages)
+                if next_response:
+                    current_reply = next_response.choices[0].message.content
+                    logger.info(
+                        f"LLM response after skill execution (iteration {iteration})"
+                    )
                 else:
-                    return jsonify({"reply": ai_reply})  # Fallback
+                    break
 
             except Exception as e:
-                logger.error(f"Skill execution error: {e}")
-                memory.append("assistant", ai_reply)
-                return jsonify({"reply": ai_reply, "warning": "Skill execution failed"})
+                logger.error(f"Skill execution error (iteration {iteration}): {e}")
+                break
 
-        memory.append("assistant", ai_reply)
-        return jsonify({"reply": ai_reply})
+        # 保存最终回复到记忆
+        memory.append("assistant", current_reply)
+
+        # 如果执行了多步，添加执行信息
+        if iteration > 0:
+            logger.info(f"Multi-step execution completed: {iteration} iterations")
+            return jsonify({"reply": current_reply, "steps": iteration})
+
+        return jsonify({"reply": current_reply})
 
     # ============================================================================
     # Dashboard Routes
