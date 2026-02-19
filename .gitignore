@@ -9,3 +9,6 @@ venv/
 
 # Local infrastructure and ops logs
 ops_log.md
+
+# Local archive and historical docs
+docs/archive/
