@@ -6,3 +6,6 @@ __pycache__/
 env/
 venv/
 *.log
+
+# Local infrastructure and ops logs
+ops_log.md

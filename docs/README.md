@@ -93,7 +93,7 @@
 
 ### 核心组件
 
-#### 1. Agent Core (`agent_core.py`)
+### 1. Agent Core (`agent_core.py`)
 基于 pi-mono 架构实现的 Agent 运行时核心。
 
 ```python
@@ -113,6 +113,19 @@ class AgentCore:
 - 事件流 (AgentEventStream)
 - 支持 steering（用户中断）
 - 最大迭代次数限制
+
+#### 2. AI 加速层 (Hardware)
+- **Google Coral Edge TPU**:
+  - 驱动: `libedgetpu1-std`, `gasket-dkms`
+  - 访问组: `apex`
+  - 状态: 硬件已挂载 (USB 3.0), 待机 ID `1a6e:089a`
+  - 建议: 使用 Docker (Python 3.9) 避开宿主机 Python 3.13 兼容性问题
+
+#### 3. 网络基础设施 (Network)
+- **中转代理 (NAS)**:
+  - 节点: <PROXY_IP>:7890 (HTTP/HTTPS)
+  - 类型: Mihomo (Clash Meta)
+  - 功能: 自动分流, DNS 优化, 局域网共享
 
 #### 2. LLM Client (`llm_client.py`)
 OpenAI 兼容的 LLM 客户端。
