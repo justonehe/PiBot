@@ -618,8 +618,8 @@ def create_default_worker_pool() -> WorkerPool:
     workers_config = []
 
     # Worker 1 (primary)
-    worker1_ip = os.environ.get("WORKER_1_IP", "${WORKER_1_IP}")
-    if worker1_ip:
+    worker1_ip = os.environ.get("WORKER_1_IP", "")
+    if worker1_ip and not worker1_ip.startswith("${"):
         workers_config.append(("worker-1", worker1_ip))
 
     # Worker 2 (optional)

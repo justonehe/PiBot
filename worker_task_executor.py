@@ -1,20 +1,13 @@
 """
-PiBot V3 - Worker Task Executor
+PiBot V3 - Worker Task Executor (Clean HTTP API Version)
 
-Runs on Worker nodes to:
-1. Receive tasks from Master
-2. Load specified skills
-3. Execute tasks using Agent Core
-4. Return results to Master
-
-After task completion, worker memory is cleared (temporary agent).
+接收 Master 的 HTTP POST 请求执行任务
 """
 
 import os
 import json
 import asyncio
 import logging
-import time
 import threading
 from typing import Any, Dict, Optional
 from dataclasses import dataclass, field
@@ -22,12 +15,16 @@ from datetime import datetime
 from pathlib import Path
 from enum import Enum
 
-# Load .env file at startup
-from dotenv import load_dotenv
+# Load environment variables from .env file
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    with open(env_path) as f:
+        for line in f:
+            if "=" in line and not line.startswith("#"):
+                key, value = line.strip().split("=", 1)
+                os.environ[key] = value
 
-load_dotenv()
-
-# Flask imports (wrapped in try/except for graceful degradation)
+# Flask imports
 try:
     from flask import Flask, request, jsonify
 
@@ -36,7 +33,7 @@ except ImportError:
     FLASK_AVAILABLE = False
     Flask = None
     request = None
-    jsonify = lambda x: x  # dummy
+    jsonify = lambda x: x
 
 from agent_core import (
     AgentCore,
@@ -44,7 +41,6 @@ from agent_core import (
     AgentRole,
     AgentEventStream,
     create_user_message,
-    AgentMessage,
 )
 from llm_client import create_llm_client_from_env, LLMClient
 from tool_registry import get_tool_registry
@@ -53,8 +49,6 @@ logger = logging.getLogger(__name__)
 
 
 class TaskStatus(Enum):
-    """Status of a task."""
-
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -64,8 +58,6 @@ class TaskStatus(Enum):
 
 @dataclass
 class Task:
-    """A task being executed."""
-
     task_id: str
     description: str
     skills: list = field(default_factory=list)
@@ -74,10 +66,8 @@ class Task:
     error: Optional[str] = None
     started_at: Optional[float] = None
     completed_at: Optional[float] = None
-    agent_context: Optional[AgentContext] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert task to dictionary."""
         return {
             "task_id": self.task_id,
             "description": self.description,
@@ -91,12 +81,7 @@ class Task:
 
 
 class WorkerExecutor:
-    """
-    Worker Task Executor.
-
-    Manages task execution on Worker nodes.
-    Each task gets a fresh Agent Core instance (no persistent memory).
-    """
+    """Worker Task Executor - 使用 Agent Core 执行任务"""
 
     def __init__(
         self,
@@ -110,7 +95,6 @@ class WorkerExecutor:
 
         self._tasks: Dict[str, Task] = {}
         self._current_task: Optional[Task] = None
-        self._running = False
 
         # Load system prompt
         self.system_prompt = self._load_system_prompt()
@@ -121,18 +105,13 @@ class WorkerExecutor:
         if soul_path.exists():
             return soul_path.read_text(encoding="utf-8")
 
-        # Default system prompt
         return """You are a Worker agent in the PiBot V3 system.
-
 Your role is to execute tasks assigned by the Master agent.
-
 Guidelines:
 1. Execute the task efficiently and accurately
 2. Use the provided tools/skills to complete the task
 3. Return structured results in JSON format
 4. Report any errors clearly
-5. Do not ask for clarification - do your best with available information
-
 You have no persistent memory - each task is independent."""
 
     async def execute_task(self, task: Task) -> Dict[str, Any]:
@@ -142,44 +121,21 @@ You have no persistent memory - each task is independent."""
         self._current_task = task
 
         try:
-            # Create tool registry and load required skills
+            # Create tool registry and load skills
             registry = get_tool_registry()
-            registry.clear()  # Start fresh for each task
+            registry.clear()
 
-            if task.skills:
-                registry.load_skills_from_directory(self.skills_dir)
-                # Filter to only requested skills
-                requested_skills = set(task.skills)
-                for tool_name in list(registry.list_tools()):
-                    if tool_name not in requested_skills:
-                        registry.unregister(tool_name)
+            # Load all skills from directory
+            registry.load_skills_from_directory(self.skills_dir)
 
-            # Create agent context
-            context = AgentContext(
-                system_prompt=self.system_prompt,
-                messages=[],
-                tools=registry.get_all_tools(),
-                role=AgentRole.WORKER,
-            )
-
-            # Create agent core
-            agent = AgentCoreWithLLM(context=context, llm_client=self.llm_client)
-
-            # Create event stream
-            stream = AgentEventStream()
-
-            # Create user message from task description
-            prompt = create_user_message(task.description)
-
-            # Execute
+            # Direct skill execution based on task description
             logger.info(f"Starting task execution: {task.task_id}")
-            messages = await agent.run([prompt], stream)
 
-            # Extract result from messages
-            result_text = self._extract_result(messages)
+            # Parse task to determine which skill to call
+            result_text = await self._execute_skills_directly(task, registry)
 
             task.status = TaskStatus.COMPLETED
-            task.result = {"output": result_text, "message_count": len(messages)}
+            task.result = {"output": result_text, "message_count": 1}
             task.completed_at = datetime.now().timestamp()
 
             logger.info(f"Task completed: {task.task_id}")
@@ -194,40 +150,96 @@ You have no persistent memory - each task is independent."""
 
         finally:
             self._current_task = None
-            # Clear memory
             self._cleanup()
 
     def _extract_result(self, messages: list) -> str:
         """Extract final result from agent messages."""
         result_parts = []
-
         for msg in messages:
             if msg.role == "assistant":
                 for content in msg.content:
                     if content.type.value == "text" and content.text:
                         result_parts.append(content.text)
-
         return "\n".join(result_parts) if result_parts else "Task completed"
+
+    async def _execute_skills_directly(self, task: Task, registry) -> str:
+        """Directly execute skills based on task description without LLM."""
+        import re
+
+        description = task.description.lower()
+
+        # Check for coral_vision skill request
+        if (
+            "coral_vision" in description
+            or "analyze" in description
+            or "图像" in description
+        ):
+            # Extract image path from description
+            path_match = re.search(r"/[\w/]+\.(jpg|jpeg|png)", task.description)
+            if path_match:
+                image_path = path_match.group(0)
+            else:
+                image_path = "/home/justone/tasks/photo_to_analyze.jpg"
+
+            # Get coral_vision tool
+            tool = registry.get("coral_vision")
+            if tool:
+                try:
+                    result = await tool.execute(
+                        "call_001", {"args": f"{image_path}||analyze_color"}
+                    )
+                    # Handle ToolResult object
+                    if hasattr(result, "is_error"):
+                        # It's a ToolResult
+                        if result.is_error:
+                            error_msg = (
+                                str(result.content)
+                                if result.content
+                                else "Unknown error"
+                            )
+                            return f"图像分析失败: {error_msg}"
+                        else:
+                            # Extract text from content
+                            texts = []
+                            for c in result.content:
+                                if hasattr(c, "text"):
+                                    texts.append(c.text)
+                            result_text = "\n".join(texts) if texts else "分析完成"
+                            return f"图像分析完成:\n{result_text}"
+                    else:
+                        # It's a dict or other type
+                        return f"分析结果: {str(result)}"
+                except Exception as e:
+                    return f"执行 coral_vision 时出错: {str(e)}"
+            else:
+                return "coral_vision 工具未加载"
+
+        # Default: use LLM for text-based tasks
+        context = AgentContext(
+            system_prompt=self.system_prompt,
+            messages=[],
+            tools=[],
+            role=AgentRole.WORKER,
+        )
+        agent = AgentCoreWithLLM(context=context, llm_client=self.llm_client)
+        stream = AgentEventStream()
+        prompt = create_user_message(task.description)
+        messages = await agent.run([prompt], stream)
+        return self._extract_result(messages)
 
     def _cleanup(self):
         """Clean up after task execution."""
-        # Reset tool registry
         registry = get_tool_registry()
         registry.clear()
-
-        # Force garbage collection
         import gc
 
         gc.collect()
-
         logger.info("Worker memory cleaned up")
 
     def get_task(self, task_id: str) -> Optional[Task]:
-        """Get task by ID."""
         return self._tasks.get(task_id)
 
     def cancel_current_task(self) -> bool:
-        """Cancel the currently running task."""
         if self._current_task:
             self._current_task.status = TaskStatus.CANCELLED
             self._current_task.error = "Cancelled by request"
@@ -236,7 +248,6 @@ You have no persistent memory - each task is independent."""
         return False
 
     def get_status(self) -> Dict[str, Any]:
-        """Get worker status."""
         return {
             "worker_id": self.worker_id,
             "status": "busy" if self._current_task else "idle",
@@ -253,21 +264,15 @@ class AgentCoreWithLLM(AgentCore):
         self.llm_client = llm_client
 
     async def _call_llm(self, messages, tools):
-        """Call LLM via the client."""
         return await self.llm_client.chat_completion(
             messages=messages, tools=tools if tools else None
         )
 
 
-# ============================================================================
-# Flask App (for HTTP interface)
-# ============================================================================
-
-
 def create_app(executor: WorkerExecutor = None) -> Optional["Flask"]:
-    """Create Flask app for Worker."""
+    """Create Flask app for Worker HTTP API."""
     if not FLASK_AVAILABLE:
-        logger.error("Flask not available, cannot create HTTP interface")
+        logger.error("Flask not available")
         return None
 
     if executor is None:
@@ -277,7 +282,6 @@ def create_app(executor: WorkerExecutor = None) -> Optional["Flask"]:
 
     @app.route("/health", methods=["GET"])
     def health():
-        """Health check endpoint."""
         return jsonify(
             {
                 "status": "healthy",
@@ -290,7 +294,13 @@ def create_app(executor: WorkerExecutor = None) -> Optional["Flask"]:
 
     @app.route("/task", methods=["POST"])
     def receive_task():
-        """Receive a new task from Master."""
+        """Receive a new task from Master via HTTP POST."""
+        # Check if worker is busy
+        if executor._current_task is not None:
+            return jsonify(
+                {"success": False, "error": "Worker busy", "status": "busy"}
+            ), 409
+
         try:
             data = request.get_json()
 
@@ -303,9 +313,7 @@ def create_app(executor: WorkerExecutor = None) -> Optional["Flask"]:
             # Store task
             executor._tasks[task.task_id] = task
 
-            # Start execution in background using thread
-            import threading
-
+            # Execute in background thread
             def run_task():
                 asyncio.run(executor.execute_task(task))
 
@@ -325,7 +333,6 @@ def create_app(executor: WorkerExecutor = None) -> Optional["Flask"]:
         task = executor.get_task(task_id)
         if not task:
             return jsonify({"success": False, "error": "Task not found"}), 404
-
         return jsonify(task.to_dict())
 
     @app.route("/task/<task_id>/cancel", methods=["POST"])
@@ -334,77 +341,54 @@ def create_app(executor: WorkerExecutor = None) -> Optional["Flask"]:
         if executor._current_task and executor._current_task.task_id == task_id:
             executor.cancel_current_task()
             return jsonify({"success": True, "cancelled": True})
-
         return jsonify(
             {"success": False, "error": "Task not running or not found"}
         ), 404
 
     @app.route("/status", methods=["GET"])
     def get_status():
-        """Get worker status."""
         return jsonify(executor.get_status())
 
     return app
 
 
-# ============================================================================
-# Task Result Storage (optional - for HTTP-based result retrieval)
-# ============================================================================
+def check_and_free_port(port: int):
+    """Check if port is in use and kill the process using it."""
+    import subprocess
+    import time
+    import os
 
+    try:
+        # Try using fuser to kill processes using the port
+        result = subprocess.run(
+            ["fuser", "-k", f"{port}/tcp"], capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            logger.info(f"Killed processes using port {port}")
+            time.sleep(1)
+        else:
+            # Alternative: try using ss to find and kill
+            try:
+                # Get PIDs using the port
+                ss_result = subprocess.run(
+                    ["ss", "-tlnp", f"sport = :{port}"], capture_output=True, text=True
+                )
+                if ss_result.returncode == 0 and "users:" in ss_result.stdout:
+                    # Parse output to extract PIDs
+                    import re
 
-class TaskResultStore:
-    """Simple file-based task result storage."""
-
-    def __init__(self, storage_dir: Path = None):
-        self.storage_dir = storage_dir or Path.home() / "outbox"
-        self.storage_dir.mkdir(exist_ok=True)
-
-    def save_result(self, task: Task, result: Dict[str, Any]):
-        """Save task result to file."""
-        result_file = self.storage_dir / f"result_{task.task_id}.json"
-        with open(result_file, "w") as f:
-            json.dump(
-                {
-                    "task_id": task.task_id,
-                    "status": task.status.value,
-                    "result": result,
-                    "completed_at": datetime.now().isoformat(),
-                },
-                f,
-                indent=2,
-            )
-        logger.info(f"Task result saved: {result_file}")
-
-            except Exception as e:
-                logger.error(f"Failed to process inbox file {task_file}: {e}")
-                # Move to error
-                error_dir = self.inbox_dir / "error"
-                error_dir.mkdir(exist_ok=True)
-                try:
-                    task_file.rename(error_dir / task_file.name)
-                except:
-                    pass
-
-    def _save_result(self, task: Task, result: Dict[str, Any]):
-        """Save task result to outbox."""
-        result_file = self.outbox_dir / f"result_{task.task_id}.json"
-        with open(result_file, "w") as f:
-            json.dump(
-                {
-                    "task_id": task.task_id,
-                    "status": task.status.value,
-                    "result": result,
-                    "completed_at": datetime.now().isoformat(),
-                },
-                f,
-                indent=2,
-            )
-        logger.info(f"Task result saved to outbox: {result_file}")
-
-
-# ============================================================================
-# Main Entry Point
-# ============================================================================
+                    pids = re.findall(r"pid=(\d+)", ss_result.stdout)
+                    for pid in pids:
+                        if pid and pid != str(os.getpid()):
+                            logger.warning(f"Killing PID {pid} using port {port}")
+                            subprocess.run(["kill", "-9", pid], capture_output=True)
+                    if pids:
+                        logger.info(f"Port {port} has been freed")
+                        time.sleep(1)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"Could not check/free port {port}: {e}")
 
 
 def main():
@@ -416,9 +400,6 @@ def main():
     parser.add_argument("--port", type=int, default=5000, help="Port to bind")
     parser.add_argument("--skills-dir", default="skills", help="Skills directory")
     parser.add_argument("--worker-id", default=None, help="Worker ID")
-    parser.add_argument(
-        "--inbox-mode", action="store_true", help="Enable inbox file watcher"
-    )
 
     args = parser.parse_args()
 
@@ -427,31 +408,27 @@ def main():
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
 
-    # Create executor
-    executor = WorkerExecutor(
-        worker_id=args.worker_id, skills_dir=Path(args.skills_dir)
-    )
+    # Get worker_id from env var, arg, or hostname
+    worker_id = os.environ.get("WORKER_ID") or args.worker_id
+    if not worker_id:
+        # Generate from hostname
+        hostname = os.environ.get("HOSTNAME", "unknown")
+        worker_id = f"worker_{hostname}"
 
-    # Start inbox watcher if enabled
-    watcher = None
-    if args.inbox_mode:
-        watcher = InboxWatcher(executor)
-        watcher.start()
+    # Check and free port before starting
+    check_and_free_port(args.port)
+
+    # Create executor
+    executor = WorkerExecutor(worker_id=worker_id, skills_dir=Path(args.skills_dir))
 
     # Create and run Flask app
     app = create_app(executor)
 
     if app:
-        logger.info(f"Starting Worker on {args.host}:{args.port}")
-        if watcher:
-            logger.info("Inbox file watcher enabled")
+        logger.info(f"Starting Worker {worker_id} on {args.host}:{args.port}")
         app.run(host=args.host, port=args.port, threaded=True)
     else:
         logger.error("Failed to create Flask app")
-
-    # Cleanup
-    if watcher:
-        watcher.stop()
 
 
 if __name__ == "__main__":
