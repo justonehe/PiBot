@@ -68,12 +68,24 @@ PiBot/
 ├── tool_registry.py          # Tool registry
 ├── master_components.py      # TaskPlanner + WorkerPool
 ├── worker_task_executor.py   # Worker HTTP service
-├── test_integration.py       # Integration tests
+├── skill_manager.py          # Skill loading and management
+├── dashboard.py              # Web dashboard (7-inch screen optimized)
 │
 ├── skills/                   # Skills directory
+│   ├── core.py               # Core skills (shell, file, web)
+│   ├── task_manager.py       # Task management skill
+│   └── ...
+│
+├── tests/                    # Test suite
+│   └── test_regression_suite.py  # Regression tests
+│
 ├── docs/                     # Documentation
 │   ├── README.md            # Detailed docs (Chinese)
 │   └── archive/             # Historical docs
+│
+├── services/                 # Systemd service files
+│   ├── pibot-hub.service    # Master service
+│   └── pibot-kiosk.service  # Kiosk display service
 │
 ├── deploy_master.sh         # Master deployment script
 ├── deploy_worker.sh         # Worker deployment script
@@ -137,6 +149,21 @@ EOF
 python3 master_hub.py
 ```
 
+### 3. Quick Deploy (Development)
+
+For quick deployment during development, create `.deploy-config` locally (not committed to git):
+
+```bash
+# .deploy-config - local deployment configuration
+SSH_USER=your_username
+MASTER_IP=192.168.x.x
+WORKER_IP=192.168.x.x
+
+# Then use rsync for quick deploy:
+rsync -avz --delete *.py skills/ $SSH_USER@$MASTER_IP:~/pibot-master/
+rsync -avz --delete worker_task_executor.py skills/ $SSH_USER@$WORKER_IP:~/pibot-worker/
+```
+
 ---
 
 ## 🌐 Access Points
@@ -150,7 +177,44 @@ python3 master_hub.py
 
 ---
 
+## 🧪 Testing
+
+```bash
+# Run regression tests
+pytest -q
+
+# Test specific components
+pytest tests/test_regression_suite.py -v
+```
+
+---
+
+## 🗺️ Roadmap / Next Steps
+
+### Architecture Improvements
+- [ ] **Frontend/Backend Separation** - Extract HTML/CSS/JS from `master_hub.py` into separate `static/` directory
+  - Move `HTML_BASE` template to `static/index.html`
+  - Separate CSS to `static/css/style.css`
+  - Separate JavaScript to `static/js/app.js`
+  - Benefits: Better maintainability, modern dev workflow, separation of concerns
+
+### Features
+- [ ] WebSocket support for real-time chat streaming
+- [ ] Task queue with persistence (Redis/SQLite)
+- [ ] Authentication system for dashboard access
+- [ ] Coral TPU integration for on-device inference
+
+---
+
 ## 🔄 Version History
+
+### v3.0.1 (2026-02-20)
+- ✅ Fixed syntax errors blocking skill loading
+- ✅ Removed duplicate function definitions in master_hub
+- ✅ Added Worker busy protection (HTTP 409)
+- ✅ Added config placeholder validation
+- ✅ Added regression test suite
+- ✅ Frontend UI improvements (timestamps, sender labels)
 
 ### v3.0.0 (2026-02-19)
 - ✅ Master-Worker architecture implementation
@@ -158,10 +222,6 @@ python3 master_hub.py
 - ✅ HTTP REST API communication
 - ✅ Multi-step task execution
 - ✅ Document consolidation
-
-### v2.x (2026-02-18)
-- Bug fixes and optimizations
-- Dashboard improvements
 
 ---
 
@@ -171,6 +231,6 @@ MIT License
 
 ---
 
-**Version**: v3.0.0  
-**Last Updated**: 2026-02-19  
+**Version**: v3.0.1  
+**Last Updated**: 2026-02-20  
 **Maintained by**: justonehe
