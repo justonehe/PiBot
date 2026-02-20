@@ -2,7 +2,22 @@
 
 ## 版本历史
 
-### v3.0.0 - 2026-02-19 (当前版本)
+### v3.0.1 - 2026-02-20 (当前版本)
+**安全修复和架构优化**
+
+- ✅ 修复语法错误（f-string、重复定义）
+- ✅ 移除硬编码 API 密钥
+- ✅ 添加 Worker 忙时保护（HTTP 409）
+- ✅ 添加配置占位符验证
+- ✅ 添加回归测试套件
+- ✅ 前端界面改进（时间戳、发信人标签）
+
+**架构改进：**
+- 统一 Master 数据源（移除重复函数）
+- Worker 单任务串行执行
+- 全局工具注册表并发安全
+
+### v3.0.0 - 2026-02-19
 **重大更新：Master-Worker 架构实现**
 
 - ✅ 实现 Agent Core 核心模块（基于 pi-mono 架构）
@@ -17,23 +32,6 @@
 - 引入 TaskPlanner 任务复杂度分析
 - 引入 WorkerPool 工作池管理
 - 实现 HTTP REST API 通信协议
-
-### v2.x - 2026-02-18 (历史版本)
-**修复和优化阶段**
-
-- 修复 Dashboard 显示问题
-- 修复 web_fetch skill 返回格式
-- 优化内存管理（tape/memory）
-- 添加 create_skill 模板
-- 修复 systemd 服务配置
-
-### v1.x - 早期版本
-**初始架构**
-
-- 基础 Master Hub 实现
-- 简单 Skill 系统
-- Flask Web 界面
-- 本地文件队列通信
 
 ---
 
@@ -90,6 +88,45 @@
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 项目结构
+
+```
+PiBot/
+├── master_hub.py              # Master 主程序（Flask + Agent Core）
+├── agent_core.py              # Agent 核心循环
+├── llm_client.py             # LLM 客户端（OpenAI 兼容）
+├── tool_registry.py          # 工具注册表
+├── master_components.py      # TaskPlanner + WorkerPool
+├── worker_task_executor.py   # Worker HTTP 服务
+├── skill_manager.py          # 技能加载与管理
+├── dashboard.py              # Web 仪表盘（7寸屏幕优化）
+│
+├── skills/                   # 技能目录
+│   ├── core.py               # 核心技能（shell、file、web）
+│   ├── task_manager.py       # 任务管理技能
+│   └── ...
+│
+├── tests/                    # 测试套件
+│   └── test_regression_suite.py  # 回归测试
+│
+├── docs/                     # 文档
+│   ├── README.md            # 详细文档（中文）
+│   └── archive/             # 历史文档
+│
+├── services/                 # Systemd 服务文件
+│   ├── pibot-hub.service    # Master 服务
+│   └── pibot-kiosk.service  # Kiosk 显示服务
+│
+├── deploy_master.sh         # Master 部署脚本
+├── deploy_worker.sh         # Worker 部署脚本
+├── soul.md                  # Master 系统提示词
+└── README.md                # 项目说明
+```
+
+---
 
 ### 核心组件
 
@@ -260,6 +297,35 @@ GET http://<WORKER_IP>:5000/task/task_001/result
 
 ---
 
+## 测试
+
+```bash
+# 运行回归测试
+pytest -q
+
+# 测试特定组件
+pytest tests/test_regression_suite.py -v
+```
+
+---
+
+## 路线图 / 下一步计划
+
+### 架构改进
+- [ ] **前后端分离** - 将 HTML/CSS/JS 从 `master_hub.py` 提取到独立的 `static/` 目录
+  - 将 `HTML_BASE` 模板移至 `static/index.html`
+  - 分离 CSS 到 `static/css/style.css`
+  - 分离 JavaScript 到 `static/js/app.js`
+  - 优势：更好的可维护性、现代开发工作流、关注点分离
+
+### 功能特性
+- [ ] WebSocket 支持，实现实时聊天流
+- [ ] 任务队列持久化（Redis/SQLite）
+- [ ] Dashboard 访问认证系统
+- [ ] Coral TPU 集成，支持本地推理
+
+---
+
 ## 配置文件
 
 ### Master (<MASTER_IP>)
@@ -286,6 +352,23 @@ MODEL_NAME=ark-code-latest
 
 # Worker 标识
 WORKER_ID=worker-1
+```
+
+---
+
+## 快速部署（开发环境）
+
+开发过程中快速部署，在本地创建 `.deploy-config`（不提交到 git）：
+
+```bash
+# .deploy-config - 本地部署配置
+SSH_USER=your_username
+MASTER_IP=192.168.x.x
+WORKER_IP=192.168.x.x
+
+# 使用 rsync 快速部署：
+rsync -avz --delete *.py skills/ $SSH_USER@$MASTER_IP:~/pibot-master/
+rsync -avz --delete worker_task_executor.py skills/ $SSH_USER@$WORKER_IP:~/pibot-worker/
 ```
 
 ---
@@ -350,12 +433,13 @@ python3 ~/master_hub.py
 
 ## 文档历史
 
+- **v3.0.1** (2026-02-20): 同步英文版 README，添加路线图
 - **v3.0.0** (2026-02-19): 整合所有文档，添加版本历史
 - **v2.x** (2026-02-18): 修复阶段文档
 - **v1.x** (早期): 初始架构文档
 
 ---
 
-**当前版本: v3.0.0**  
-**最后更新: 2026-02-19**  
+**当前版本: v3.0.1**  
+**最后更新: 2026-02-20**  
 **状态: 生产就绪** ✅
