@@ -619,11 +619,6 @@ def save_todos(todos):
         json.dump(todos, f, ensure_ascii=False, indent=2)
 
 
-def get_todos():
-    """Get all todos."""
-    return load_todos()
-
-
 def add_todo(text):
     """Add a new todo."""
     todos = load_todos()
@@ -657,41 +652,6 @@ def toggle_todo_status(todo_id):
     return False
 
 
-# Weather data (mock for now, can be replaced with real API)
-_last_weather_update = 0
-_weather_cache = None
-
-
-def get_weather_data():
-    """Get weather data (with caching)."""
-    global _last_weather_update, _weather_cache
-
-    # Cache for 10 minutes
-    if _weather_cache and (time.time() - _last_weather_update) < 600:
-        return _weather_cache
-
-    # TODO: Replace with real weather API
-    # For now, return mock data
-    weather = {
-        "location": "Shanghai",
-        "current": {
-            "temp": 22,
-            "condition": "sunny",
-            "humidity": 65,
-            "wind": "3级",
-        },
-        "forecast": [
-            {"day": "明天", "condition": "cloudy", "high": 23, "low": 18},
-            {"day": "后天", "condition": "rainy", "high": 20, "low": 16},
-            {"day": "周五", "condition": "sunny", "high": 25, "low": 19},
-        ],
-    }
-
-    _weather_cache = weather
-    _last_weather_update = time.time()
-    return weather
-
-
 # Worker status tracking
 _workers_status = {
     "worker_1": {
@@ -713,32 +673,6 @@ _workers_status = {
         "last_seen": None,
     },
 }
-
-
-def get_workers_status():
-    """Get workers status."""
-    # TODO: Add real worker health check
-    # For now, return configured workers
-    return [
-        {
-            "id": "worker_1",
-            "name": _workers_status["worker_1"]["name"],
-            "status": _workers_status["worker_1"]["status"],
-            "statusText": _workers_status["worker_1"]["statusText"],
-        },
-        {
-            "id": "worker_2",
-            "name": _workers_status["worker_2"]["name"],
-            "status": _workers_status["worker_2"]["status"],
-            "statusText": _workers_status["worker_2"]["statusText"],
-        },
-        {
-            "id": "worker_3",
-            "name": _workers_status["worker_3"]["name"],
-            "status": _workers_status["worker_3"]["status"],
-            "statusText": _workers_status["worker_3"]["statusText"],
-        },
-    ]
 
 
 def update_worker_status(worker_id, status, status_text):
