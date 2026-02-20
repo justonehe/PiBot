@@ -10,5 +10,21 @@ venv/
 # Local infrastructure and ops logs
 ops_log.md
 
+# Delivery reports (local only)
+DELIVERY_REPORT.md
+
 # Local archive and historical docs
 docs/archive/
+
+# Deployment configuration (contains sensitive info)
+.deploy-config
+*.env
+!example.env
+
+# Cache directories
+.pytest_cache/
+.ruff_cache/
+
+# Local test data files
+*.json
+!tests/*.json
