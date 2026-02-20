@@ -17,19 +17,21 @@ import logging
 # Core Skills (Original)
 # ============================================================================
 
+
 def read_file(path):
     """Read file content (safe check)"""
     try:
         path = path.strip()
         if not os.path.exists(path):
             return f"Error: File '{path}' not found."
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             content = f.read(2048)  # Limit size
             if len(content) == 2048:
                 content += "\n...(truncated)..."
             return content
     except Exception as e:
         return f"Error reading file: {e}"
+
 
 def write_file(args):
     """Write/Append file. Format: PATH||CONTENT or PATH||APPEND||CONTENT"""
@@ -53,13 +55,17 @@ def write_file(args):
     except Exception as e:
         return f"Error writing file: {e}"
 
+
 def run_shell(cmd):
     """Run shell command on Master (Local)"""
     try:
-        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+        res = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True, timeout=10
+        )
         return f"Output:\n{res.stdout}\nError:\n{res.stderr}"
     except Exception as e:
         return f"Error running shell: {e}"
+
 
 def install_skill(url_args):
     """Download a skill from a URL. Args: url (or url|filename)"""
@@ -79,11 +85,14 @@ def install_skill(url_args):
         if response.status_code == 200:
             with open(target_path, "w") as f:
                 f.write(response.text)
-            return f"Skill downloaded to {target_path}. Please restart Master to load it."
+            return (
+                f"Skill downloaded to {target_path}. Please restart Master to load it."
+            )
         else:
             return f"Download failed: {response.status_code}"
     except Exception as e:
         return f"Install failed: {e}"
+
 
 def take_photo(args=None):
     """Take a photo using system camera. Returns markdown image link."""
@@ -108,15 +117,17 @@ def take_photo(args=None):
     except Exception as e:
         return f"Photo Exception: {e}"
 
+
 # ============================================================================
 # Skill Template Generators (NEW - Smart Pattern Recognition)
 # ============================================================================
+
 
 def generate_web_fetch_skill(skill_name, description):
     """Generate web_fetch skill with actual implementation"""
     template = f'''"""
 {skill_name.capitalize()} Skill
-Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Created: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 Description: {description}
 """
 
@@ -240,7 +251,7 @@ def generate_shell_cmd_skill(skill_name, description):
     """Generate shell command execution skill"""
     template = f'''"""
 {skill_name.capitalize()} Skill
-Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Created: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 Description: {description}
 """
 
@@ -264,7 +275,7 @@ def execute(args=None):
         cmd = args.strip()
         
         # Security check: block dangerous commands
-        dangerous_patterns = ["rm -rf /", "mkfs", "dd if=", ":(){ :|: };"]
+        dangerous_patterns = ["rm -rf /", "mkfs", "dd if=", ":(){" + ":|: };"]
         for pattern in dangerous_patterns:
             if pattern in cmd:
                 return f"Error: Dangerous command blocked for safety: {{cmd[:50]}}"
@@ -311,7 +322,7 @@ def generate_default_skill(skill_name, description):
     """Generate generic skill template"""
     template = f'''"""
 {skill_name.capitalize()} Skill
-Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Created: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 Description: {description}
 """
 
@@ -368,6 +379,7 @@ def register_skills(skill_manager):
 # Enhanced Skill Management Skills
 # ============================================================================
 
+
 def create_skill(args):
     """
     Create a new skill with intelligent template generation.
@@ -412,10 +424,10 @@ def create_skill(args):
 
         # Intelligent template generation based on skill name pattern
         pattern_matchers = [
-            (r'^web_fetch', generate_web_fetch_skill),
-            (r'.*_?fetch', generate_web_fetch_skill),
-            (r'shell.*cmd', generate_shell_cmd_skill),
-            (r'.*_?cmd', generate_shell_cmd_skill),
+            (r"^web_fetch", generate_web_fetch_skill),
+            (r".*_?fetch", generate_web_fetch_skill),
+            (r"shell.*cmd", generate_shell_cmd_skill),
+            (r".*_?cmd", generate_shell_cmd_skill),
         ]
 
         template = None
@@ -431,12 +443,16 @@ def create_skill(args):
             template = generate_default_skill(skill_name, description)
 
         # Write skill file
-        with open(skill_file, 'w') as f:
+        with open(skill_file, "w") as f:
             f.write(template)
 
         # Enhanced success message
-        is_smart = "✨ Smart template" if template != generate_default_skill(skill_name, description) else "📝 Standard template"
-        
+        is_smart = (
+            "✨ Smart template"
+            if template != generate_default_skill(skill_name, description)
+            else "📝 Standard template"
+        )
+
         result = f"""✅ Skill '{skill_name}' created successfully! {is_smart}
 
 📁 Location: {skill_file.absolute()}
@@ -444,7 +460,7 @@ def create_skill(args):
 
 📚 Implementation Details:
 """
-        
+
         if template != generate_default_skill(skill_name, description):
             result += "\n🤖 Auto-generated implementation included:\n"
             result += "   - Web fetching with requests library\n"
@@ -508,12 +524,12 @@ def list_skills(args=None):
 
             # Extract description
             try:
-                with open(skill_file, 'r') as f:
+                with open(skill_file, "r") as f:
                     content = f.read()
                     if '"""' in content:
                         parts = content.split('"""')
                         if len(parts) >= 2:
-                            docstring_lines = parts[1].strip().split('\n')
+                            docstring_lines = parts[1].strip().split("\n")
                             for line in docstring_lines[:5]:
                                 if line.startswith("Description:"):
                                     desc = line.split("Description:", 1)[1].strip()
@@ -532,9 +548,11 @@ def list_skills(args=None):
 
             # Check if it has implementation beyond TODO
             try:
-                with open(skill_file, 'r') as f:
+                with open(skill_file, "r") as f:
                     content = f.read()
-                    has_impl = "# TODO:" not in content or "return f\"Executed" not in content
+                    has_impl = (
+                        "# TODO:" not in content or 'return f"Executed' not in content
+                    )
                 impl_status = "✅" if has_impl else "🔧 Template"
             except:
                 impl_status = "❓"
@@ -679,6 +697,7 @@ New skills appear after restart or reload.
 # Skill Registration
 # ============================================================================
 
+
 def register_skills(skill_manager):
     """
     Register all core skills including enhanced management skills.
@@ -688,13 +707,29 @@ def register_skills(skill_manager):
     """
     # Original core skills
     skill_manager.register("read_file", "Read file content. Args: path", read_file)
-    skill_manager.register("write_file", "Write content to file. Args: path||content", write_file)
-    skill_manager.register("run_cmd", "Run shell command on Master. Args: cmd", run_shell)
-    skill_manager.register("install_skill", "Download python skill from URL. Args: url", install_skill)
+    skill_manager.register(
+        "write_file", "Write content to file. Args: path||content", write_file
+    )
+    skill_manager.register(
+        "run_cmd", "Run shell command on Master. Args: cmd", run_shell
+    )
+    skill_manager.register(
+        "install_skill", "Download python skill from URL. Args: url", install_skill
+    )
     skill_manager.register("take_photo", "Take a photo. No args required.", take_photo)
 
     # Enhanced skill management skills
-    skill_manager.register("create_skill", "Create skill with smart templates. Args: name||description", create_skill)
-    skill_manager.register("list_skills", "List all skills with status. No args", list_skills)
-    skill_manager.register("reload_skills", "Reload skill registry. No args", reload_skills)
-    skill_manager.register("skill_help", "Show skill management help. No args", skill_help)
+    skill_manager.register(
+        "create_skill",
+        "Create skill with smart templates. Args: name||description",
+        create_skill,
+    )
+    skill_manager.register(
+        "list_skills", "List all skills with status. No args", list_skills
+    )
+    skill_manager.register(
+        "reload_skills", "Reload skill registry. No args", reload_skills
+    )
+    skill_manager.register(
+        "skill_help", "Show skill management help. No args", skill_help
+    )
